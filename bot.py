@@ -855,6 +855,33 @@ async def cmd_removeseed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("❌ Seed(s) not found or already inactive.")
 
+async def cmd_updateemail(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Update a creator's email: /updateemail @username new@email.com"""
+    if not authorized(update.effective_user.id): return
+    args = update.message.text.split()
+    if len(args) != 3:
+        await update.message.reply_text("Usage: `/updateemail @username new@email.com`", parse_mode="HTML")
+        return
+        
+    username = args[1].lstrip("@").strip().lower()
+    new_email = args[2].strip().lower()
+    
+    conn = db.get_db()
+    creator = conn.execute("SELECT id FROM creators WHERE LOWER(handle)=?", (username,)).fetchone()
+    if not creator:
+        conn.close()
+        await update.message.reply_text(f"❌ Could not find creator @{username} in the CRM.")
+        return
+        
+    try:
+        conn.execute("UPDATE creators SET email=? WHERE id=?", (new_email, creator["id"]))
+        conn.commit()
+        await update.message.reply_text(f"✅ Successfully updated email for @{username} to {new_email}!")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error updating email (might be a duplicate): {e}")
+    finally:
+        conn.close()
+
 async def cmd_stopseed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not authorized(update.effective_user.id): return
     import discovery
@@ -5172,6 +5199,7 @@ def main():
     application.add_handler(CommandHandler("togglealias", cmd_togglealias))
     application.add_handler(CommandHandler("pausemasteraliases", cmd_pausemasteraliases))
     application.add_handler(CommandHandler("resumemasteraliases", cmd_resumemasteraliases))
+    application.add_handler(CommandHandler("updateemail", cmd_updateemail))
     application.add_handler(CommandHandler("aliasesstats", cmd_aliasesstats))
     application.add_handler(CommandHandler("warmupstatus", cmd_warmupstatus))
     application.add_handler(CommandHandler("setlimit", cmd_setlimit))

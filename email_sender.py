@@ -40,7 +40,11 @@ def send_email_now(to_email: str, subject: str, body: str, account_dict: dict = 
 
     try:
         msg = MIMEMultipart("alternative")
-        msg["From"] = formataddr(("Rajdeep", from_email))
+        # Use a dynamic name based on the alias prefix if it's an alias, else default
+        name_part = from_email.split("@")[0].capitalize()
+        if name_part.lower() in ["f12x.studio", "mfmarketing"]:
+            name_part = "Rajdeep"
+        msg["From"] = formataddr((name_part, from_email))
         msg["To"] = to_email
         msg["Subject"] = subject
         # If it's a gmail master account, create message_id for it, if alias, maybe the same

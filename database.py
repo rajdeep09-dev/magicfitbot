@@ -485,8 +485,8 @@ def get_next_available_account():
     if not candidates:
         return None
         
-    # Sort by least recently used, or least sent today
-    candidates.sort(key=lambda x: (x["sent_today"]))
+    # Sort by least sent today, and prioritize aliases over master accounts
+    candidates.sort(key=lambda x: (x["sent_today"], 0 if x["type"] == "alias" else 1))
     return candidates[0]
 
 

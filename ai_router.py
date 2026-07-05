@@ -36,6 +36,8 @@ def generate_opener_email(creator_info: dict) -> dict:
     creator_info: {name, handle, platform, followers, tier, bio, niche}
     Returns: {subject, body, used_fallback}
     """
+    if hasattr(creator_info, "keys"):
+        creator_info = dict(creator_info)
     system_prompt = db.get_setting("system_prompt")
 
     user_prompt = f"""Write a cold outreach email to this creator. This is the FIRST email so it should be just an opener asking if they're open to collabs, with a one-line hint at the deal (upfront fee + 50% commission for 12 months). Do not include full deal details.
@@ -77,6 +79,8 @@ def generate_reply(creator_info: dict, conversation: list, their_latest_reply: s
     instruction: optional guidance from user like "offer them $150 flat fee" or "explain the commission better"
     Returns: {subject, body, suggested_stage, used_fallback}
     """
+    if hasattr(creator_info, "keys"):
+        creator_info = dict(creator_info)
     system_prompt = db.get_setting("system_prompt")
     deal_structure = db.get_setting("deal_structure")
 
@@ -130,6 +134,8 @@ Output format (JSON only, no markdown, no extra text):
 
 def generate_followup(creator_info: dict, previous_emails: list, followup_number: int) -> dict:
     """Generate a follow-up email (no reply received)."""
+    if hasattr(creator_info, "keys"):
+        creator_info = dict(creator_info)
     system_prompt = db.get_setting("system_prompt")
 
     previous_text = ""
@@ -168,6 +174,8 @@ Output format (JSON only):
 
 def generate_dm_hook(creator_info: dict) -> str:
     """Generate a single-sentence personalized hook based on bio/niche."""
+    if hasattr(creator_info, "keys"):
+        creator_info = dict(creator_info)
     system_prompt = db.get_setting("system_prompt")
     user_prompt = f"""Write ONE short, highly personalized sentence to be used as a DM opener hook.
     
