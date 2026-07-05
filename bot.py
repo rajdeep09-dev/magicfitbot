@@ -3137,7 +3137,32 @@ async def cmd_files(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton(f"📁 {fname} ({size_kb} KB)", callback_data=f"getf_{fname}")])
         
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Select a file to download:", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "📂 <b>Exported Files</b>\nClick a file to download it. Use /removefile <filename> to delete.",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+
+async def cmd_removefile(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Remove a file from discovery_exports."""
+    if not authorized(update.effective_user.id): return
+    
+    if len(ctx.args) < 1:
+        await update.message.reply_text("Usage: /removefile <filename>")
+        return
+        
+    import os
+    fname = os.path.basename(ctx.args[0]) 
+    filepath = os.path.join("discovery_exports", fname)
+    
+    if os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+            await update.message.reply_text(f"✅ Removed file: {fname}")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Failed to remove file: {e}")
+    else:
+        await update.message.reply_text(f"❌ File not found: {fname}")
 
 async def cmd_scan(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not authorized(update.effective_user.id) or not discovery: return
