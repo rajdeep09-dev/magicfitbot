@@ -3138,7 +3138,7 @@ async def cmd_files(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(
-        "📂 <b>Exported Files</b>\nClick a file to download it. Use /removefile <filename> to delete.",
+        "📂 <b>Exported Files</b>\nClick a file to download it. Use /removefile &lt;filename&gt; to delete.",
         reply_markup=reply_markup,
         parse_mode="HTML"
     )
