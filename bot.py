@@ -1202,10 +1202,14 @@ async def cmd_apikeys(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def _set_api_key(update, key_name, setting_key, env_var):
     """Generic API key setter."""
-    text = update.message.text.split(maxsplit=1)
+    msg = update.message or update.edited_message
+    if not msg or not msg.text:
+        return
+        
+    text = msg.text.split(maxsplit=1)
     if len(text) < 2 or not text[1].strip():
         current = db.get_setting(setting_key, "")
-        await update.message.reply_text(
+        await msg.reply_text(
             f"Current: {_mask_key(current)}\n"
             f"Usage: /{key_name.lower().replace(' ','')} YOUR_KEY_HERE"
         )
@@ -2101,9 +2105,7 @@ async def handle_text(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 if r: cids.append(r["id"])
                             conn.close()
                             if cids:
-                                import dm_automation
-                                queued = dm_automation.queue_bulk_campaign(cids)
-                                await update.message.reply_text(f"🚀 Queued outreach for {queued} creators.")
+                                pass  # dm_automation disabled
                             else:
                                 await update.message.reply_text("❌ None of those handles were found in CRM.")
                         else:
@@ -2997,31 +2999,107 @@ async def post_init(app):
     try:
         from telegram import BotCommand
         commands = [
+            # Navigation & General
             BotCommand("dashboard", "📊 Full status dashboard"),
-            BotCommand("hunt", "🔍 Search and scan creators"),
+            BotCommand("d", "📊 Dashboard (shortcut)"),
+            BotCommand("today", "📅 Today's outreach stats"),
+            BotCommand("help", "❓ All commands"),
+            BotCommand("ai", "🤖 AI natural language commands"),
+            BotCommand("exit", "🚪 Return to main menu"),
+            BotCommand("cancel", "❌ Cancel current operation"),
+            # Discovery
+            BotCommand("hunt", "🔍 Switch to Hunt mode"),
             BotCommand("scan", "🔍 Run a lookalike scan"),
-            BotCommand("seeds", "🌱 View saved seed accounts"),
-            BotCommand("addseed", "🌱 Add seed accounts"),
+            BotCommand("cancelscan", "🛑 Cancel active scan"),
+            BotCommand("scanhistory", "📜 Past scan results"),
+            BotCommand("pushtocrm", "📤 Push scan results to CRM"),
+            BotCommand("autoscan", "🔄 Setup recurring scan"),
+            BotCommand("autoscans", "📋 List auto-scans"),
+            BotCommand("stopautoscan", "🛑 Stop an auto-scan"),
+            BotCommand("lookalike", "👥 Quick lookalike lookup"),
+            BotCommand("seen", "👁 Seen profiles count"),
+            BotCommand("clearseen", "🧹 Clear seen profiles"),
+            BotCommand("setmaxfollow", "🔢 Max followings/seed"),
+            BotCommand("setmaxresults", "🔢 Max results/scan"),
+            # Filters
+            BotCommand("scrapemode", "⚙️ View/set scrape backend"),
+            BotCommand("setfilters", "📏 Follower range filter"),
+            BotCommand("setreach", "📐 Reach ratio filter"),
+            BotCommand("keywords", "🏷 Bio keyword scoring"),
+            # Seeds
+            BotCommand("seeds", "🌱 View saved seeds"),
+            BotCommand("addseed", "🌱 Add a seed account"),
             BotCommand("removeseed", "🗑 Remove a seed"),
-            BotCommand("outreach", "📧 Campaign management"),
-            BotCommand("crm", "📋 View CRM pipeline"),
-            BotCommand("export_tinder", "📁 Bulk review via HTML"),
+            # Cookies & Apify
+            BotCommand("addcookie", "🍪 Add IG cookies"),
+            BotCommand("cookies", "🍪 List cookies"),
+            BotCommand("removecookie", "🗑 Remove a cookie"),
+            BotCommand("howtocookies", "📖 How to get cookies"),
+            BotCommand("addapify", "🔑 Add Apify token"),
+            BotCommand("apifytokens", "🔑 List Apify tokens"),
+            BotCommand("removeapify", "🗑 Remove Apify token"),
+            # CRM
+            BotCommand("crm", "📋 CRM pipeline dashboard"),
+            BotCommand("creator", "👤 Creator detail view"),
+            BotCommand("hot", "🔥 Hot leads awaiting reply"),
+            BotCommand("won", "🏆 Mark deal Won"),
+            BotCommand("lost", "💀 Mark deal Lost"),
+            BotCommand("note", "📝 Add a note"),
+            BotCommand("reply", "💬 Reply to creator"),
+            BotCommand("resend", "🔄 Manual follow-up"),
+            BotCommand("updateemail", "📧 Update creator email"),
+            # Tinder / Review
             BotCommand("tinder", "🎯 Swipe through creators"),
-            BotCommand("analytics", "📈 Funnel conversion stats"),
-            BotCommand("dmstatus", "📨 DM queue status"),
-            BotCommand("setdminterval", "⏱ Configure DM intervals"),
-            BotCommand("previewdm", "👀 Preview a DM message"),
+            BotCommand("export_tinder", "📁 Bulk review HTML"),
+            BotCommand("export", "📁 Export (alias)"),
+            BotCommand("preview", "👀 Preview creator card"),
+            # Bulk Actions
+            BotCommand("bulk", "📦 Paste many emails/URLs"),
             BotCommand("passall", "✅ Pass all discovered"),
             BotCommand("skipall", "❌ Skip all discovered"),
-            BotCommand("outreachall", "🚀 Queue all passed"),
-            BotCommand("retrydms", "🔄 Retry failed DMs"),
-            BotCommand("today", "📅 Today's outreach stats"),
-            BotCommand("hot", "🔥 Hot leads awaiting reply"),
-            BotCommand("queue", "📬 View message queue"),
+            BotCommand("outreachall", "🚀 Queue all for outreach"),
+            BotCommand("launch_campaign", "🚀 Launch campaign"),
+            # Outreach & Email
+            BotCommand("outreach", "📧 Switch to Outreach mode"),
+            BotCommand("accounts", "📬 List Gmail accounts"),
+            BotCommand("addaccount", "📬 Add Gmail account"),
+            BotCommand("removeaccount", "🗑 Remove Gmail account"),
+            BotCommand("setlimit", "🔢 Set daily send limit"),
+            BotCommand("pause", "⏸ Pause an account"),
+            BotCommand("resume", "▶️ Resume an account"),
+            BotCommand("warmupstatus", "🌡 Warmup status"),
+            # Aliases
+            BotCommand("addalias", "📧 Add SMTP alias"),
+            BotCommand("bulkaddalias", "📧 Bulk add aliases"),
+            BotCommand("listaliases", "📋 List all aliases"),
+            BotCommand("removealias", "🗑 Remove an alias"),
+            BotCommand("togglealias", "🔀 Toggle alias on/off"),
+            BotCommand("pausemasteraliases", "⏸ Pause master aliases"),
+            BotCommand("resumemasteraliases", "▶️ Resume master aliases"),
+            BotCommand("aliasesstats", "📊 Alias statistics"),
+            # Queue
+            BotCommand("queue", "📬 View send queue"),
+            BotCommand("startqueue", "▶️ Start queue processor"),
+            BotCommand("stopqueue", "⏹ Stop queue processor"),
+            BotCommand("dmlist", "📨 Recent sent messages"),
+            BotCommand("exportdms", "📤 Export sent to CSV"),
+            # Reply Watcher
+            BotCommand("checkreplies", "📥 Check for replies now"),
+            BotCommand("replystatus", "⏱ Reply check timer"),
+            BotCommand("startwatcher", "▶️ Start reply watcher"),
+            BotCommand("stopwatcher", "⏹ Stop reply watcher"),
+            # API Keys
+            BotCommand("apikeys", "🔑 API key status"),
+            BotCommand("setgemini", "🔑 Set Gemini key"),
+            BotCommand("setopenrouter", "🔑 Set OpenRouter key"),
+            # Settings & Reports
+            BotCommand("settings", "⚙️ View all settings"),
+            BotCommand("setprompt", "✏️ Edit AI prompt"),
             BotCommand("report", "📊 Campaign report"),
-            BotCommand("settings", "⚙️ Configure bot"),
-            BotCommand("help", "❓ List all commands"),
-            BotCommand("exit", "🚪 Return to main menu"),
+            BotCommand("fullreport", "📊 7-day breakdown"),
+            BotCommand("pipeline", "📊 Stage breakdown"),
+            BotCommand("analytics", "📈 Funnel analytics"),
+            BotCommand("files", "📂 Access exported files"),
         ]
         await app.bot.set_my_commands(commands)
         logger.info("Slash commands list registered successfully.")
@@ -3122,10 +3200,8 @@ async def cmd_launch_campaign(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
     cids = [r[0] for r in rows]
     
-    import dm_automation
-    queued = dm_automation.queue_bulk_campaign(cids)
-    
-    await update.message.reply_text(f"🚀 Campaign launched! Queued {queued} DMs to be sent automatically.")
+    # dm_automation disabled
+    await update.message.reply_text(f"🚀 Campaign launched for {len(cids)} creators.")
 
 
 async def cmd_addcookie(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -4016,7 +4092,7 @@ async def cmd_export_tinder(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not authorized(update.effective_user.id): return
     conn = db.get_db()
     c = conn.cursor()
-    c.execute("SELECT id, handle, name, followers, engagement_rate, bio, niche, tags, location, profile_url, recent_posts_stats FROM creators WHERE stage='discovered' ORDER BY id ASC")
+    c.execute("SELECT id, handle, name, followers, engagement_rate, bio, niche, tags, location, profile_url, email FROM creators WHERE stage='discovered' ORDER BY id ASC")
     rows = c.fetchall()
     conn.close()
     
@@ -4026,6 +4102,8 @@ async def cmd_export_tinder(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
     creators_list = []
     for r in rows:
+        email_val = r["email"] or ""
+        has_email = bool(email_val and not email_val.startswith("no_email_"))
         creators_list.append({
             "id": r["id"],
             "handle": r["handle"],
@@ -4037,7 +4115,8 @@ async def cmd_export_tinder(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "tags": r["tags"] or "",
             "location": r["location"] or "",
             "profile_url": r["profile_url"] or f"https://instagram.com/{r['handle']}",
-            "recent_posts_stats": r["recent_posts_stats"] or "[]"
+            "email": email_val if has_email else "",
+            "has_email": has_email
         })
         
     import json
@@ -4048,522 +4127,490 @@ async def cmd_export_tinder(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Creator Reacher - Bulk Tinder Review</title>
+    <title>Creator Reacher - Bulk Review</title>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-color: #080c14;
-            --card-bg: rgba(255, 255, 255, 0.02);
-            --card-border: rgba(255, 255, 255, 0.06);
-            --card-hover-bg: rgba(255, 255, 255, 0.04);
-            --primary: #6366f1;
-            --good: #10b981;
-            --skip: #ef4444;
-            --seed: #06b6d4;
-            --outreach: #f97316;
-            --text: #f3f4f6;
-            --text-muted: #9ca3af;
-            --font-main: 'Plus Jakarta Sans', sans-serif;
+            --bg: #0a0e17;
+            --surface: rgba(255,255,255,0.03);
+            --surface-hover: rgba(255,255,255,0.06);
+            --border: rgba(255,255,255,0.07);
+            --primary: #818cf8;
+            --primary-glow: rgba(129,140,248,0.15);
+            --good: #34d399;
+            --skip: #f87171;
+            --seed: #22d3ee;
+            --outreach: #fb923c;
+            --text: #f1f5f9;
+            --muted: #94a3b8;
+            --email-good: rgba(52,211,153,0.12);
+            --email-bad: rgba(248,113,113,0.12);
         }
-        * {
-            box-sizing: border-box;
-            transition: all 0.2s ease;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background-color: var(--bg-color);
+            background: var(--bg);
             color: var(--text);
-            font-family: var(--font-main);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+            font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
             min-height: 100vh;
+            padding: 24px;
         }
         header {
-            margin-bottom: 20px;
-            text-align: center;
-            width: 100%;
-            max-width: 1200px;
+            max-width: 1400px;
+            margin: 0 auto 24px;
             display: flex;
+            flex-wrap: wrap;
             justify-content: space-between;
             align-items: center;
-            border-bottom: 1px solid var(--card-border);
-            padding-bottom: 15px;
+            gap: 16px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border);
         }
-        .logo-title h1 {
-            margin: 0;
-            font-size: 1.8rem;
-            background: linear-gradient(135deg, #a78bfa, #818cf8);
+        .logo h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a78bfa, #818cf8, #6366f1);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            font-weight: 700;
         }
-        .logo-title p {
-            margin: 5px 0 0 0;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-        }
-        .search-bar {
+        .logo p { color: var(--muted); font-size: 0.85rem; margin-top: 4px; }
+        .toolbar {
             display: flex;
+            flex-wrap: wrap;
             gap: 10px;
-            width: 100%;
-            max-width: 400px;
+            align-items: center;
         }
-        .search-bar input {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--card-border);
-            border-radius: 8px;
+        .toolbar input, .toolbar select {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 10px;
             color: var(--text);
-            padding: 10px 15px;
-            width: 100%;
-            font-family: var(--font-main);
+            padding: 9px 14px;
+            font-family: inherit;
+            font-size: 0.85rem;
             outline: none;
+            transition: border-color 0.2s;
         }
-        .search-bar input:focus {
+        .toolbar input:focus, .toolbar select:focus {
             border-color: var(--primary);
-            box-shadow: 0 0 10px rgba(99, 102, 241, 0.2);
+            box-shadow: 0 0 0 3px var(--primary-glow);
         }
+        .toolbar input { width: 220px; }
+        .toolbar select { min-width: 140px; cursor: pointer; }
+        .toolbar select option { background: #1e293b; }
+        .bulk-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+        .bulk-btn {
+            padding: 8px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--muted);
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .bulk-btn:hover { background: var(--surface-hover); color: var(--text); }
+        .bulk-btn.bg-good { border-color: var(--good); color: var(--good); }
+        .bulk-btn.bg-good:hover { background: rgba(52,211,153,0.1); }
+        .bulk-btn.bg-skip { border-color: var(--skip); color: var(--skip); }
+        .bulk-btn.bg-skip:hover { background: rgba(248,113,113,0.1); }
+
+        .stats-bar {
+            max-width: 1400px;
+            margin: 0 auto 20px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+        }
+        .stat-pill {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+
         .container {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-            gap: 20px;
-            width: 100%;
-            max-width: 1200px;
-            padding-bottom: 120px;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 18px;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding-bottom: 130px;
         }
         .card {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
+            background: var(--surface);
+            border: 1px solid var(--border);
             border-radius: 16px;
             padding: 20px;
-            backdrop-filter: blur(12px);
             display: flex;
             flex-direction: column;
-            justify-content: space-between;
             position: relative;
+            transition: all 0.25s ease;
         }
         .card:hover {
-            background: var(--card-hover-bg);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+            background: var(--surface-hover);
+            transform: translateY(-3px);
+            box-shadow: 0 12px 32px rgba(0,0,0,0.3);
         }
-        
-        /* Action classes indicator borders */
-        .card.active-state { border-color: var(--primary); }
-        .card.skip-state { border-color: rgba(239, 68, 68, 0.3); }
-        
+        .card.active-state { border-color: rgba(129,140,248,0.4); }
+        .card.skip-state { border-color: rgba(248,113,113,0.2); }
+
         .badge-list {
             position: absolute;
-            top: 15px;
-            right: 15px;
-            display: flex;
-            gap: 5px;
-            flex-wrap: wrap;
+            top: 14px; right: 14px;
+            display: flex; gap: 5px; flex-wrap: wrap;
         }
         .badge {
-            padding: 4px 8px;
+            padding: 3px 8px;
             border-radius: 20px;
             font-size: 0.65rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.04em;
         }
-        .badge.good { background: rgba(16, 185, 129, 0.15); color: var(--good); }
-        .badge.seed { background: rgba(6, 182, 212, 0.15); color: var(--seed); }
-        .badge.outreach { background: rgba(249, 115, 22, 0.15); color: var(--outreach); }
-        .badge.skip { background: rgba(239, 68, 68, 0.15); color: var(--skip); }
+        .badge.good { background: rgba(52,211,153,0.15); color: var(--good); }
+        .badge.seed { background: rgba(34,211,238,0.15); color: var(--seed); }
+        .badge.outreach { background: rgba(251,146,60,0.15); color: var(--outreach); }
+        .badge.skip { background: rgba(248,113,113,0.15); color: var(--skip); }
+        .badge.email-yes { background: var(--email-good); color: var(--good); }
+        .badge.email-no { background: var(--email-bad); color: var(--skip); }
 
-        .creator-header {
-            margin-bottom: 15px;
-            padding-right: 70px;
+        .creator-header { margin-bottom: 12px; padding-right: 90px; }
+        .creator-header h3 { font-size: 1.15rem; font-weight: 600; }
+        .handle-link {
+            display: inline-flex; align-items: center; gap: 5px;
+            color: var(--primary); text-decoration: none;
+            font-size: 0.82rem; font-weight: 500;
+            margin-top: 4px; opacity: 0.9;
         }
-        .creator-header h3 {
-            margin: 0;
-            font-size: 1.25rem;
-            font-weight: 600;
-        }
-        .open-profile-btn {
-            background: rgba(255,255,255,0.04);
-            border: 1px solid var(--card-border);
-            color: var(--text-muted);
-            text-decoration: none;
-            font-size: 0.8rem;
-            display: inline-flex;
+        .handle-link:hover { opacity: 1; text-decoration: underline; }
+
+        .email-row {
+            margin: 8px 0 12px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.82rem;
+            font-weight: 500;
+            display: flex;
             align-items: center;
             gap: 6px;
-            margin-top: 5px;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-weight: 600;
         }
-        .open-profile-btn:hover {
-            color: #fff;
-            background: rgba(255,255,255,0.08);
-            border-color: var(--primary);
+        .email-row.has-email {
+            background: var(--email-good);
+            color: var(--good);
         }
-        
+        .email-row.no-email {
+            background: var(--email-bad);
+            color: var(--skip);
+            font-style: italic;
+        }
+
         .metrics {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 10px;
-            margin-bottom: 15px;
+            gap: 8px;
+            margin-bottom: 12px;
         }
-        .metric-box {
-            background: rgba(255, 255, 255, 0.015);
-            border: 1px solid rgba(255, 255, 255, 0.03);
+        .metric {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.04);
             border-radius: 8px;
             padding: 8px 12px;
         }
-        .metric-box span {
-            display: block;
-        }
-        .metric-val {
-            font-size: 1.05rem;
-            font-weight: 700;
-            color: #fff;
-        }
-        .metric-lbl {
-            font-size: 0.75rem;
-            color: var(--text-muted);
-            margin-bottom: 2px;
-        }
-        
+        .metric-lbl { font-size: 0.72rem; color: var(--muted); margin-bottom: 2px; }
+        .metric-val { font-size: 1rem; font-weight: 700; }
+
         .bio {
-            font-size: 0.85rem;
-            color: #d1d5db;
-            line-height: 1.4;
-            margin-bottom: 15px;
-            display: -webkit-box;
-            -webkit-line-clamp: 3;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
+            font-size: 0.82rem; color: #cbd5e1;
+            line-height: 1.45; margin-bottom: 12px;
+            display: -webkit-box; -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical; overflow: hidden;
             cursor: pointer;
         }
-        .bio.expanded {
-            -webkit-line-clamp: unset;
+        .bio.expanded { -webkit-line-clamp: unset; }
+
+        .tags-loc {
+            font-size: 0.78rem; color: var(--muted);
+            margin-bottom: 14px;
         }
-        
-        .tags-location {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            margin-bottom: 15px;
-        }
-        
-        .posts-section {
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-            padding-top: 12px;
-            margin-bottom: 20px;
-        }
-        .posts-toggle {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--primary);
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        .posts-list {
-            margin-top: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            max-height: 180px;
-            overflow-y: auto;
-            padding-right: 5px;
-        }
-        .post-row {
-            background: rgba(255, 255, 255, 0.01);
-            border: 1px solid rgba(255, 255, 255, 0.02);
-            border-radius: 6px;
-            padding: 6px 10px;
-            font-size: 0.75rem;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .post-stats {
-            font-weight: 600;
-            color: #fff;
-        }
-        .post-caption {
-            color: var(--text-muted);
-            font-style: italic;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        
-        .actions-checkboxes {
+
+        .actions {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
             gap: 6px;
+            margin-top: auto;
         }
-        .actions-checkboxes button {
-            border: 1px solid var(--card-border);
-            background: rgba(255, 255, 255, 0.03);
-            color: var(--text-muted);
-            padding: 8px 0;
-            border-radius: 8px;
-            font-size: 0.75rem;
+        .actions button {
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.03);
+            color: var(--muted);
+            padding: 9px 0;
+            border-radius: 10px;
+            font-size: 0.78rem;
             font-weight: 600;
             cursor: pointer;
+            transition: all 0.2s;
         }
-        .actions-checkboxes button:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: #fff;
-        }
-        .actions-checkboxes button.active.btn-good { background: rgba(16, 185, 129, 0.2); border-color: var(--good); color: var(--good); }
-        .actions-checkboxes button.active.btn-seed { background: rgba(6, 182, 212, 0.2); border-color: var(--seed); color: var(--seed); }
-        .actions-checkboxes button.active.btn-outreach { background: rgba(249, 115, 22, 0.2); border-color: var(--outreach); color: var(--outreach); }
-        
+        .actions button:hover { background: rgba(255,255,255,0.08); color: #fff; }
+        .actions button.active.btn-good { background: rgba(52,211,153,0.2); border-color: var(--good); color: var(--good); }
+        .actions button.active.btn-seed { background: rgba(34,211,238,0.2); border-color: var(--seed); color: var(--seed); }
+        .actions button.active.btn-outreach { background: rgba(251,146,60,0.2); border-color: var(--outreach); color: var(--outreach); }
+
         .footer-bar {
             position: fixed;
-            bottom: 20px;
-            left: 50%;
+            bottom: 16px; left: 50%;
             transform: translateX(-50%);
-            background: rgba(8, 12, 20, 0.85);
-            backdrop-filter: blur(24px);
-            border: 1px solid var(--card-border);
-            border-radius: 30px;
-            padding: 12px 30px;
+            background: rgba(10,14,23,0.9);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            padding: 14px 28px;
             display: flex;
             justify-content: space-between;
             align-items: center;
             width: calc(100% - 40px);
-            max-width: 800px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+            max-width: 900px;
+            box-shadow: 0 16px 48px rgba(0,0,0,0.5);
             z-index: 1000;
         }
-        .stats-summary {
-            font-size: 0.9rem;
-            font-weight: 500;
-        }
-        .stats-summary span {
-            margin-right: 15px;
-        }
-        .download-btn {
-            background: var(--primary);
+        .footer-stats { font-size: 0.85rem; font-weight: 500; display: flex; gap: 16px; flex-wrap: wrap; }
+        .footer-stats span { white-space: nowrap; }
+        .dl-btn {
+            background: linear-gradient(135deg, #6366f1, #818cf8);
             color: #fff;
             border: none;
-            padding: 10px 22px;
-            border-radius: 20px;
-            font-weight: 600;
-            font-size: 0.9rem;
+            padding: 10px 24px;
+            border-radius: 16px;
+            font-weight: 700;
+            font-size: 0.88rem;
             cursor: pointer;
-            box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+            box-shadow: 0 4px 16px rgba(99,102,241,0.3);
+            transition: all 0.2s;
         }
-        .download-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
-        }
+        .dl-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(99,102,241,0.4); }
     </style>
 </head>
 <body>
     <header>
-        <div class="logo-title">
+        <div class="logo">
             <h1>Creator Reacher</h1>
-            <p>Bulk Tinder Swiper (Multi-Select Checkboxes)</p>
+            <p>Bulk Review Dashboard</p>
         </div>
-        <div class="search-bar">
-            <input type="text" id="search-input" placeholder="Search by handle or name..." oninput="filterCreators()">
+        <div class="toolbar">
+            <input type="text" id="search" placeholder="Search handle, name, bio..." oninput="applyFilters()">
+            <select id="sort-by" onchange="applyFilters()">
+                <option value="default">Sort: Default</option>
+                <option value="followers-desc">Followers ↓</option>
+                <option value="followers-asc">Followers ↑</option>
+                <option value="engagement-desc">Engagement ↓</option>
+                <option value="engagement-asc">Engagement ↑</option>
+                <option value="name-asc">Name A-Z</option>
+            </select>
+            <select id="filter-email" onchange="applyFilters()">
+                <option value="all">All Creators</option>
+                <option value="has-email">Has Email ✅</option>
+                <option value="no-email">No Email ❌</option>
+            </select>
+            <div class="bulk-btns">
+                <button class="bulk-btn bg-good" onclick="selectAll('good')">✅ All Good</button>
+                <button class="bulk-btn bg-skip" onclick="clearAll()">❌ Clear All</button>
+            </div>
         </div>
     </header>
-    
-    <div class="container" id="creators-container"></div>
-    
+
+    <div class="stats-bar" id="stats-bar"></div>
+    <div class="container" id="grid"></div>
+
     <div class="footer-bar">
-        <div class="stats-summary" id="stats-summary">
-            Total: <span id="total-count">0</span>
-            Good: <span id="good-count" style="color: var(--good);">0</span>
-            Seed: <span id="seed-count" style="color: var(--seed);">0</span>
-            Outreach: <span id="outreach-count" style="color: var(--outreach);">0</span>
-            Auto-Skip: <span id="skip-count" style="color: var(--skip);">0</span>
+        <div class="footer-stats">
+            <span>Total: <b id="s-total">0</b></span>
+            <span style="color:var(--good)">Good: <b id="s-good">0</b></span>
+            <span style="color:var(--seed)">Seed: <b id="s-seed">0</b></span>
+            <span style="color:var(--outreach)">Outreach: <b id="s-outreach">0</b></span>
+            <span style="color:var(--skip)">Skip: <b id="s-skip">0</b></span>
         </div>
-        <button class="download-btn" onclick="downloadSelections()">📥 Download Selections</button>
+        <button class="dl-btn" onclick="downloadSelections()">📥 Download JSON</button>
     </div>
 
     <script>
         const creators = __CREATORS_DATA__;
-        const selections = {};
+        const sel = {};
+        creators.forEach(c => { sel[c.id] = {good:false, seed:false, outreach:false}; });
 
-        // Pre-initialize all as unselected (which will default to skip)
-        creators.forEach(c => {
-            selections[c.id] = { good: false, seed: false, outreach: false };
-        });
-
-        function formatNumber(num) {
-            if (num >= 1000000) return (num/1000000).toFixed(1) + 'M';
-            if (num >= 1000) return (num/1000).toFixed(1) + 'k';
-            return num;
+        function fmt(n) {
+            if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+            if (n >= 1e3) return (n/1e3).toFixed(1)+'k';
+            return n;
         }
 
-        function togglePosts(id) {
-            const list = document.getElementById(`posts-${id}`);
-            const arrow = document.getElementById(`arrow-${id}`);
-            if (list.style.display === 'none') {
-                list.style.display = 'flex';
-                arrow.textContent = '▲';
-            } else {
-                list.style.display = 'none';
-                arrow.textContent = '▼';
-            }
-        }
-
-        function toggleAction(id, action, btn) {
-            const card = document.getElementById(`card-${id}`);
-            const badgesDiv = document.getElementById(`badges-${id}`);
-            
-            // Toggle selection state
-            selections[id][action] = !selections[id][action];
-            
-            if (selections[id][action]) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
-            
-            // Update Card borders & Badge views
-            let hasAnySelected = selections[id].good || selections[id].seed || selections[id].outreach;
-            
-            badgesDiv.innerHTML = '';
-            if (hasAnySelected) {
+        function toggle(id, action, btn) {
+            sel[id][action] = !sel[id][action];
+            btn.classList.toggle('active', sel[id][action]);
+            const card = document.getElementById('c-'+id);
+            const badges = document.getElementById('b-'+id);
+            const any = sel[id].good || sel[id].seed || sel[id].outreach;
+            badges.innerHTML = '';
+            if (any) {
                 card.className = 'card active-state';
-                if (selections[id].good) badgesDiv.innerHTML += '<span class="badge good">Good</span>';
-                if (selections[id].seed) badgesDiv.innerHTML += '<span class="badge seed">Seed</span>';
-                if (selections[id].outreach) badgesDiv.innerHTML += '<span class="badge outreach">Outreach</span>';
+                if (sel[id].good) badges.innerHTML += '<span class="badge good">Good</span>';
+                if (sel[id].seed) badges.innerHTML += '<span class="badge seed">Seed</span>';
+                if (sel[id].outreach) badges.innerHTML += '<span class="badge outreach">Outreach</span>';
             } else {
                 card.className = 'card skip-state';
-                badgesDiv.innerHTML = '<span class="badge skip">Auto-Skip</span>';
+                badges.innerHTML = '<span class="badge skip">Auto-Skip</span>';
             }
-            
+            updateStats();
+        }
+
+        function selectAll(action) {
+            creators.forEach(c => {
+                sel[c.id][action] = true;
+                const card = document.getElementById('c-'+c.id);
+                if (card) {
+                    card.className = 'card active-state';
+                    const badges = document.getElementById('b-'+c.id);
+                    badges.innerHTML = '';
+                    if (sel[c.id].good) badges.innerHTML += '<span class="badge good">Good</span>';
+                    if (sel[c.id].seed) badges.innerHTML += '<span class="badge seed">Seed</span>';
+                    if (sel[c.id].outreach) badges.innerHTML += '<span class="badge outreach">Outreach</span>';
+                    // Update button states
+                    const btns = card.querySelectorAll('.actions button');
+                    btns.forEach(btn => {
+                        if (btn.classList.contains('btn-'+action)) btn.classList.add('active');
+                    });
+                }
+            });
+            updateStats();
+        }
+
+        function clearAll() {
+            creators.forEach(c => {
+                sel[c.id] = {good:false, seed:false, outreach:false};
+                const card = document.getElementById('c-'+c.id);
+                if (card) {
+                    card.className = 'card skip-state';
+                    document.getElementById('b-'+c.id).innerHTML = '<span class="badge skip">Auto-Skip</span>';
+                    card.querySelectorAll('.actions button').forEach(b => b.classList.remove('active'));
+                }
+            });
             updateStats();
         }
 
         function updateStats() {
-            let good = 0, seed = 0, outreach = 0, skip = 0;
-            Object.values(selections).forEach(sel => {
-                if (sel.good) good++;
-                if (sel.seed) seed++;
-                if (sel.outreach) outreach++;
-                if (!sel.good && !sel.seed && !sel.outreach) skip++;
+            let g=0, s=0, o=0, sk=0;
+            Object.values(sel).forEach(v => {
+                if (v.good) g++;
+                if (v.seed) s++;
+                if (v.outreach) o++;
+                if (!v.good && !v.seed && !v.outreach) sk++;
             });
-            
-            document.getElementById('good-count').textContent = good;
-            document.getElementById('seed-count').textContent = seed;
-            document.getElementById('outreach-count').textContent = outreach;
-            document.getElementById('skip-count').textContent = skip;
+            document.getElementById('s-good').textContent = g;
+            document.getElementById('s-seed').textContent = s;
+            document.getElementById('s-outreach').textContent = o;
+            document.getElementById('s-skip').textContent = sk;
         }
 
-        function filterCreators() {
-            const query = document.getElementById('search-input').value.toLowerCase();
-            const cards = document.querySelectorAll('.card');
+        function applyFilters() {
+            const q = document.getElementById('search').value.toLowerCase();
+            const sortBy = document.getElementById('sort-by').value;
+            const emailFilter = document.getElementById('filter-email').value;
+            const grid = document.getElementById('grid');
+            const cards = Array.from(grid.children);
+
             cards.forEach(card => {
-                const text = card.getAttribute('data-search');
-                if (text.includes(query)) {
-                    card.style.display = 'flex';
-                } else {
-                    card.style.display = 'none';
-                }
+                const search = card.dataset.search || '';
+                const hasEmail = card.dataset.hasEmail === 'true';
+                let show = search.includes(q);
+                if (emailFilter === 'has-email' && !hasEmail) show = false;
+                if (emailFilter === 'no-email' && hasEmail) show = false;
+                card.style.display = show ? 'flex' : 'none';
             });
+
+            // Sort
+            if (sortBy !== 'default') {
+                const sorted = cards.sort((a, b) => {
+                    const fa = parseFloat(a.dataset.followers || 0);
+                    const fb = parseFloat(b.dataset.followers || 0);
+                    const ea = parseFloat(a.dataset.engagement || 0);
+                    const eb = parseFloat(b.dataset.engagement || 0);
+                    const na = (a.dataset.name || '').toLowerCase();
+                    const nb = (b.dataset.name || '').toLowerCase();
+                    if (sortBy === 'followers-desc') return fb - fa;
+                    if (sortBy === 'followers-asc') return fa - fb;
+                    if (sortBy === 'engagement-desc') return eb - ea;
+                    if (sortBy === 'engagement-asc') return ea - eb;
+                    if (sortBy === 'name-asc') return na.localeCompare(nb);
+                    return 0;
+                });
+                sorted.forEach(c => grid.appendChild(c));
+            }
         }
 
-        function renderCreators() {
-            const container = document.getElementById('creators-container');
-            container.innerHTML = '';
-            document.getElementById('total-count').textContent = creators.length;
-            
+        function render() {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            document.getElementById('s-total').textContent = creators.length;
+
+            let withEmail = 0, noEmail = 0;
+            creators.forEach(c => { c.has_email ? withEmail++ : noEmail++; });
+            document.getElementById('stats-bar').innerHTML =
+                '<div class="stat-pill">📊 Total: <b>' + creators.length + '</b></div>' +
+                '<div class="stat-pill" style="color:var(--good)">📧 With Email: <b>' + withEmail + '</b></div>' +
+                '<div class="stat-pill" style="color:var(--skip)">🚫 No Email: <b>' + noEmail + '</b></div>';
+
             creators.forEach(c => {
-                let postsHtml = '';
-                try {
-                    const posts = JSON.parse(c.recent_posts_stats);
-                    if (posts && posts.length > 0) {
-                        posts.forEach((p, idx) => {
-                            const viewsStr = formatNumber(p.views || 0);
-                            const commentsStr = formatNumber(p.comments || 0);
-                            const likesStr = formatNumber(p.likes || 0);
-                            postsHtml += `
-                                <div class="post-row">
-                                    <div class="post-stats">#${idx+1} 📺 ${viewsStr} | 💬 ${commentsStr} | ❤️ ${likesStr}</div>
-                                    <div class="post-caption" title="${p.caption || ''}">${p.caption || ''}</div>
-                                </div>
-                            `;
-                        });
-                    }
-                } catch(e) {}
-                
-                const searchStr = `${c.name} ${c.handle} ${c.bio} ${c.location} ${c.niche}`.toLowerCase();
-                
-                const card = document.createElement('div');
-                card.className = 'card skip-state';
-                card.id = `card-${c.id}`;
-                card.setAttribute('data-search', searchStr);
-                
-                card.innerHTML = `
-                    <div class="badge-list" id="badges-${c.id}">
-                        <span class="badge skip">Auto-Skip</span>
-                    </div>
+                const emailHtml = c.has_email
+                    ? '<div class="email-row has-email">📧 ' + c.email + '</div>'
+                    : '<div class="email-row no-email">🚫 No email found</div>';
+
+                const d = document.createElement('div');
+                d.className = 'card skip-state';
+                d.id = 'c-' + c.id;
+                d.dataset.search = (c.name + ' ' + c.handle + ' ' + c.bio + ' ' + c.location + ' ' + c.niche + ' ' + c.email).toLowerCase();
+                d.dataset.followers = c.followers;
+                d.dataset.engagement = c.engagement_rate;
+                d.dataset.name = c.name;
+                d.dataset.hasEmail = c.has_email;
+
+                d.innerHTML = `
+                    <div class="badge-list" id="b-${c.id}"><span class="badge skip">Auto-Skip</span></div>
                     <div>
                         <div class="creator-header">
                             <h3>${c.name}</h3>
-                            <a href="${c.profile_url}" target="_blank" class="open-profile-btn">
-                                🔗 @${c.handle} (Open Instagram)
-                            </a>
+                            <a href="${c.profile_url}" target="_blank" class="handle-link">🔗 @${c.handle}</a>
                         </div>
+                        ${emailHtml}
                         <div class="metrics">
-                            <div class="metric-box">
-                                <span class="metric-lbl">👥 Followers</span>
-                                <span class="metric-val">${formatNumber(c.followers)}</span>
-                            </div>
-                            <div class="metric-box">
-                                <span class="metric-lbl">📈 Engagement</span>
-                                <span class="metric-val">${c.engagement_rate.toFixed(2)}%</span>
-                            </div>
+                            <div class="metric"><div class="metric-lbl">👥 Followers</div><div class="metric-val">${fmt(c.followers)}</div></div>
+                            <div class="metric"><div class="metric-lbl">📈 Engagement</div><div class="metric-val">${c.engagement_rate.toFixed(2)}%</div></div>
                         </div>
-                        <div class="bio" onclick="this.classList.toggle('expanded')" title="Click to expand">${c.bio}</div>
-                        ${c.location || c.niche ? `
-                            <div class="tags-location">
-                                ${c.location ? `📍 ${c.location}` : ''} 
-                                ${c.niche ? `🎯 ${c.niche}` : ''}
-                            </div>
-                        ` : ''}
-                        
-                        ${postsHtml ? `
-                            <div class="posts-section">
-                                <div class="posts-toggle" onclick="togglePosts(${c.id})">
-                                    <span>📺 Recent Posts (Click to hide/show)</span>
-                                    <span id="arrow-${c.id}">▲</span>
-                                </div>
-                                <div class="posts-list" id="posts-${c.id}">${postsHtml}</div>
-                            </div>
-                        ` : ''}
+                        <div class="bio" onclick="this.classList.toggle('expanded')">${c.bio}</div>
+                        ${c.location || c.niche ? '<div class="tags-loc">' + (c.location ? '📍 '+c.location+' ' : '') + (c.niche ? '🎯 '+c.niche : '') + '</div>' : ''}
                     </div>
-                    <div class="actions-checkboxes">
-                        <button class="btn-good" onclick="toggleAction(${c.id}, 'good', this)">👍 Good</button>
-                        <button class="btn-seed" onclick="toggleAction(${c.id}, 'seed', this)">🌱 Seed</button>
-                        <button class="btn-outreach" onclick="toggleAction(${c.id}, 'outreach', this)">🚀 Outreach</button>
-                    </div>
-                `;
-                container.appendChild(card);
+                    <div class="actions">
+                        <button class="btn-good" onclick="toggle(${c.id},'good',this)">👍 Good</button>
+                        <button class="btn-seed" onclick="toggle(${c.id},'seed',this)">🌱 Seed</button>
+                        <button class="btn-outreach" onclick="toggle(${c.id},'outreach',this)">🚀 Outreach</button>
+                    </div>`;
+                grid.appendChild(d);
             });
         }
 
         function downloadSelections() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(selections));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href",     dataStr);
-            downloadAnchor.setAttribute("download", "selections.json");
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
+            const a = document.createElement('a');
+            a.href = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(sel));
+            a.download = 'selections.json';
+            document.body.appendChild(a); a.click(); a.remove();
         }
 
-        renderCreators();
+        render();
         updateStats();
     </script>
 </body>
 </html>"""
+
     
     html_content = html_template.replace("__CREATORS_DATA__", creators_json)
     
@@ -4639,9 +4686,10 @@ async def handle_document(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     
-    if outreach_list:
-        import dm_automation
-        dm_automation.queue_bulk_campaign(outreach_list)
+    # DM automation disabled
+    # if outreach_list:
+    #     import dm_automation
+    #     dm_automation.queue_bulk_campaign(outreach_list)
         
     total = skipped + passed
     msg = (
@@ -4809,25 +4857,7 @@ async def cmd_setdminterval(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     parts = text.split()
     
     if len(parts) < 2:
-        # Show current settings
-        import dm_automation
-        min_int = dm_automation._get_dm_setting("dm_min_interval", dm_automation.DEFAULT_DM_MIN_INTERVAL)
-        max_int = dm_automation._get_dm_setting("dm_max_interval", dm_automation.DEFAULT_DM_MAX_INTERVAL)
-        break_after = dm_automation._get_dm_setting("dm_break_after", dm_automation.DEFAULT_DM_BREAK_AFTER)
-        break_min = dm_automation._get_dm_setting("dm_break_min", dm_automation.DEFAULT_DM_BREAK_MIN)
-        break_max = dm_automation._get_dm_setting("dm_break_max", dm_automation.DEFAULT_DM_BREAK_MAX)
-        active_start = dm_automation._get_dm_setting("dm_active_start", dm_automation.DEFAULT_DM_ACTIVE_START)
-        active_end = dm_automation._get_dm_setting("dm_active_end", dm_automation.DEFAULT_DM_ACTIVE_END)
-        
-        await update.message.reply_text(
-            f"⏱ <b>Current DM Settings</b>\n\n"
-            f"📤 Interval: <b>{min_int}-{max_int} min</b> (random)\n"
-            f"☕ Break after: {break_after} DMs ({break_min}-{break_max} min pause)\n"
-            f"🕐 Active hours: {active_start}:00 - {active_end}:00\n\n"
-            f"<i>Usage: <code>/setdminterval MIN MAX</code></i>\n"
-            f"<i>Example: <code>/setdminterval 8 15</code></i>",
-            parse_mode="HTML"
-        )
+        await update.message.reply_text("DM automation is disabled. Email outreach is used instead.")
         return
     
     try:
@@ -4851,10 +4881,7 @@ async def cmd_setdminterval(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_dmstatus(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Show DM queue status."""
     if not authorized(update.effective_user.id): return
-    
-    import dm_automation
-    text = dm_automation.get_queue_summary()
-    await update.message.reply_text(text, parse_mode="HTML")
+    await update.message.reply_text("DM automation is disabled. Use email outreach instead via /startqueue.")
 
 
 async def cmd_analytics(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -4934,7 +4961,6 @@ async def cmd_skipall(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_outreachall(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Queue outreach for all passed creators with emails."""
     if not authorized(update.effective_user.id): return
-    
     conn = db.get_db()
     c = conn.cursor()
     c.execute(
@@ -4948,53 +4974,62 @@ async def cmd_outreachall(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     
     cids = [r["id"] for r in rows]
-    import dm_automation
-    queued = dm_automation.queue_bulk_campaign(cids)
+    import email_automation
+    queued = email_automation.queue_bulk_campaign(cids)
     
-    await update.message.reply_text(
-        f"🚀 Queued outreach for {queued} creators with human-like scheduling.",
-        parse_mode="HTML"
-    )
+    await update.message.reply_text(f"🚀 Queued {queued} personalized emails for outreach.")
 
 
-async def cmd_retrydms(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Retry all failed DMs."""
+async def cmd_retryemails(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Retry all failed emails."""
+    if not authorized(update.effective_user.id): return
+    conn = db.get_db()
+    c = conn.cursor()
+    c.execute("SELECT creator_id FROM emails_sent WHERE status='failed'")
+    failed = [r[0] for r in c.fetchall()]
+    
+    if not failed:
+        conn.close()
+        await update.message.reply_text("✅ No failed emails to retry.")
+        return
+        
+    c.execute("DELETE FROM emails_sent WHERE status='failed'")
+    conn.commit()
+    conn.close()
+    
+    import email_automation
+    count = email_automation.queue_bulk_campaign(failed)
+    
+    await update.message.reply_text(f"🔄 Re-queued {count} failed emails.")
+
+
+async def cmd_previewemail(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Preview the email that would be sent: /previewemail @username"""
     if not authorized(update.effective_user.id): return
     
-    import dm_automation
-    count = dm_automation.retry_failed_dms()
-    
-    if count > 0:
-        await update.message.reply_text(f"🔄 Re-queued {count} failed DMs with new human-like scheduling.")
-    else:
-        await update.message.reply_text("✅ No failed DMs to retry.")
-
-
-async def cmd_previewdm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Preview the DM that would be sent: /previewdm @username"""
-    if not authorized(update.effective_user.id): return
-    
-    text = (update.message.text or "").replace("/previewdm", "").strip()
+    text = (update.message.text or "").replace("/previewemail", "").strip()
     handles = re.findall(r'@?([a-zA-Z0-9_.]+)', text)
     
     if not handles:
-        await update.message.reply_text("Usage: <code>/previewdm @username</code>", parse_mode="HTML")
+        await update.message.reply_text("Usage: <code>/previewemail @username</code>", parse_mode="HTML")
         return
     
     handle = handles[0]
     conn = db.get_db()
     c = conn.cursor()
-    c.execute("SELECT handle, name, bio, tags, engagement_rate, location FROM creators WHERE handle=?", (handle,))
+    c.execute("SELECT handle, name, bio, tags, engagement_rate, location, is_business, email FROM creators WHERE handle=?", (handle,))
     row = c.fetchone()
     conn.close()
     
     if not row:
         await update.message.reply_text(f"❌ Creator @{handle} not found in CRM.")
         return
+    if not row["email"] or "no_email" in row["email"]:
+        await update.message.reply_text(f"❌ Creator @{handle} has no valid email address.")
+        return
+        
+    await update.message.reply_text(f"🤖 Generating preview email for @{handle} ({row['email']})...")
     
-    await update.message.reply_text(f"🤖 Generating preview DM for @{handle}...")
-    
-    import dm_automation
     cdata = {
         "username": row["handle"],
         "name": row["name"] or handle,
@@ -5002,13 +5037,16 @@ async def cmd_previewdm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "tags": row["tags"] or "",
         "engagement_rate": row["engagement_rate"],
         "location": row["location"] or "",
+        "is_business": row["is_business"],
     }
-    dm_text = dm_automation.generate_personalized_dm(cdata)
+    import email_automation
+    subject, body = email_automation.generate_personalized_email(cdata)
     
     await update.message.reply_text(
-        f"📝 <b>Preview DM for @{handle}:</b>\n\n"
-        f"<i>{dm_text}</i>\n\n"
-        f"<code>{len(dm_text)} characters</code>",
+        f"📝 <b>Preview Email for @{handle}:</b>\n\n"
+        f"<b>Subject:</b> {subject}\n\n"
+        f"<i>{body}</i>\n\n"
+        f"<i>(Note: AI generation may vary slightly upon actual sending)</i>",
         parse_mode="HTML"
     )
 
@@ -5136,9 +5174,7 @@ async def _handle_dashboard_callback(update: Update, ctx: ContextTypes.DEFAULT_T
     elif data == "dash_crm":
         await cmd_crm(update, ctx)
     elif data == "dash_dmstatus":
-        import dm_automation
-        text = dm_automation.get_queue_summary()
-        await q.message.reply_text(text, parse_mode="HTML")
+        await q.message.reply_text("DM automation is disabled.", parse_mode="HTML")
     elif data == "dash_analytics":
         await cmd_analytics(update, ctx)
     elif data == "dash_cookies":
@@ -5190,14 +5226,15 @@ def main():
     )
 
     # Command handlers
+        # Command handlers
     application.add_handler(CommandHandler("start", cmd_start))
     application.add_handler(CommandHandler("ai", cmd_ai))
     
     # New Commands
     application.add_handler(CommandHandler("lookalike", cmd_lookalike))
-    application.add_handler(CommandHandler("adddmcookie", cmd_adddmcookie))
     application.add_handler(CommandHandler("launch_campaign", cmd_launch_campaign))
     application.add_handler(CommandHandler("files", cmd_files))
+    application.add_handler(CommandHandler("removefile", cmd_removefile))
     application.add_handler(CommandHandler("tinder", cmd_tinder))
 
     # PATCH9_MODE_CMDS_REGISTERED
@@ -5263,7 +5300,8 @@ def main():
     application.add_handler(CommandHandler("note", cmd_note))
     application.add_handler(CommandHandler("today", cmd_today))
     application.add_handler(CommandHandler("bulk", cmd_bulk))
-    #  Discovery commands (merged scraper bot) 
+    
+    # Discovery commands
     application.add_handler(CommandHandler("exportdms", cmd_exportdms))
     application.add_handler(CommandHandler("export_tinder", cmd_export_tinder))
     application.add_handler(CommandHandler("export", cmd_export_tinder))
@@ -5290,14 +5328,10 @@ def main():
     application.add_handler(CommandHandler("setmaxfollow", cmd_setmaxfollow))
     application.add_handler(CommandHandler("setmaxresults", cmd_setmaxresults))
     application.add_handler(CallbackQueryHandler(_handle_discovery_callback, pattern="^disc_"))
-    # # application.add_handler(CommandHandler("dmconfig", cmd_dmconfig))
-    # # application.add_handler(CommandHandler("dmstatus", cmd_dmstatus))
-    # # application.add_handler(CommandHandler("startdmcampaign", cmd_startdmcampaign))
-    # # application.add_handler(CommandHandler("retrydms", cmd_retrydms))
-    # # application.add_handler(CommandHandler("previewdm", cmd_previewdm))
-    # # application.add_handler(CommandHandler("testdm", cmd_testdm))
-    # PATCH9_MODE_CALLBACK
+    
+    # Mode callbacks
     application.add_handler(CallbackQueryHandler(_handle_mode_callback, pattern="^mode_"))
+    
     # Overhaul: new command handlers
     application.add_handler(CommandHandler("dashboard", cmd_dashboard))
     application.add_handler(CommandHandler("d", cmd_dashboard))
@@ -5310,8 +5344,8 @@ def main():
     application.add_handler(CommandHandler("passall", cmd_passall))
     application.add_handler(CommandHandler("skipall", cmd_skipall))
     application.add_handler(CommandHandler("outreachall", cmd_outreachall))
-    application.add_handler(CommandHandler("retrydms", cmd_retrydms))
-    application.add_handler(CommandHandler("previewdm", cmd_previewdm))
+    application.add_handler(CommandHandler("retryemails", cmd_retryemails))
+    application.add_handler(CommandHandler("previewemail", cmd_previewemail))
     application.add_handler(CallbackQueryHandler(_handle_dashboard_callback, pattern="^dash_"))
 
     # Callbacks
@@ -5350,8 +5384,8 @@ def main():
             c.execute("UPDATE creators SET stage='Passed', tags=COALESCE(tags, '') || ' seed' WHERE id=?", (cid,))
         elif action == "tinder_outreach":
             c.execute("UPDATE creators SET stage='Passed' WHERE id=?", (cid,))
-            import dm_automation
-            dm_automation.queue_bulk_campaign([cid])
+            # dm_automation disabled
+            pass
             
         conn.commit()
         conn.close()

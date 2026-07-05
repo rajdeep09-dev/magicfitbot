@@ -41,13 +41,23 @@ def send_email_now(to_email: str, subject: str, body: str, account_dict: dict = 
     try:
         msg = MIMEMultipart("alternative")
         # Use a dynamic name based on the alias prefix if it's an alias, else default
-        name_part = from_email.split("@")[0].capitalize()
-        if name_part.lower() in ["f12x.studio", "mfmarketing"]:
-            name_part = "Rajdeep"
+        name_part = from_email.split("@")[0].replace(".", " ").title()
+        # Override with nicer names for known addresses
+        known_names = {"f12x.studio": "Rajdeep", "mfmarketing": "Rajdeep"}
+        for prefix, nice_name in known_names.items():
+            if from_email.lower().startswith(prefix):
+                name_part = nice_name
+                break
+        
         msg["From"] = formataddr((name_part, from_email))
         msg["To"] = to_email
         msg["Subject"] = subject
-        # If it's a gmail master account, create message_id for it, if alias, maybe the same
+        
+        # If sending via alias (from_email != smtp_user), set Sender header
+        # This tells Gmail to use the alias address in the From: header
+        if from_email.lower() != smtp_user.lower():
+            msg["Sender"] = formataddr((name_part, smtp_user))
+        
         domain = from_email.split("@")[1] if "@" in from_email else "gmail.com"
         message_id = make_msgid(domain=domain)
         msg["Message-ID"] = message_id
@@ -58,7 +68,8 @@ def send_email_now(to_email: str, subject: str, body: str, account_dict: dict = 
             server.starttls()
             server.ehlo()
             server.login(smtp_user, smtp_pass)
-            server.sendmail(from_email, [to_email], msg.as_string())
+            # Use smtp_user (master account) as envelope sender, from_email in headers
+            server.sendmail(smtp_user, [to_email], msg.as_string())
 
         db.increment_account_sent(account_dict["id"], account_dict["type"] == "alias")
         return {
