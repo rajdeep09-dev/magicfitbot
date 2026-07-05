@@ -3362,6 +3362,17 @@ async def _handle_discovery_callback(update: Update, ctx: ContextTypes.DEFAULT_T
 
         log_lines = []
         async def prog(text):
+            if text.startswith("EXPORT_TRIGGER:TOKEN_SWAP|"):
+                filepath = text.split("|", 1)[1]
+                from telegram import InputFile
+                try:
+                    with open(filepath, "rb") as f:
+                        await ctx.bot.send_document(uid, document=InputFile(f, filename="partial_export_apify_swap.csv"),
+                                                    caption="⚠️ Sent mid-flight CSV export because Apify token changed.")
+                except Exception as e:
+                    pass
+                return
+
             is_bar = text.startswith("[") and ("█" in text or "░" in text)
             if is_bar and log_lines and log_lines[-1].startswith("[") and ("█" in log_lines[-1] or "░" in log_lines[-1]):
                 log_lines[-1] = text
@@ -3616,6 +3627,18 @@ async def _mfai_run_scan(update, ctx, seeds, hops, skip_seen, discovery):
         state = {"last": 0.0, "msg": None}
         log_lines = []
         async def prog(txt):
+            if txt.startswith("EXPORT_TRIGGER:TOKEN_SWAP|"):
+                filepath = txt.split("|", 1)[1]
+                from telegram import InputFile
+                try:
+                    with open(filepath, "rb") as f:
+                        await ctx.bot.send_document(uid, document=InputFile(f, filename="partial_export_apify_swap.csv"),
+                                                    caption="⚠️ Sent mid-flight CSV export because Apify token changed.")
+                except Exception as e:
+                    import logging
+                    logging.getLogger("bot").warning(f"Failed to send partial export: {e}")
+                return
+
             is_bar = txt.startswith("[") and ("█" in txt or "░" in txt)
             if is_bar and log_lines and log_lines[-1].startswith("[") and ("█" in log_lines[-1] or "░" in log_lines[-1]):
                 log_lines[-1] = txt
@@ -5267,6 +5290,12 @@ def main():
     application.add_handler(CommandHandler("setmaxfollow", cmd_setmaxfollow))
     application.add_handler(CommandHandler("setmaxresults", cmd_setmaxresults))
     application.add_handler(CallbackQueryHandler(_handle_discovery_callback, pattern="^disc_"))
+    # # application.add_handler(CommandHandler("dmconfig", cmd_dmconfig))
+    # # application.add_handler(CommandHandler("dmstatus", cmd_dmstatus))
+    # # application.add_handler(CommandHandler("startdmcampaign", cmd_startdmcampaign))
+    # # application.add_handler(CommandHandler("retrydms", cmd_retrydms))
+    # # application.add_handler(CommandHandler("previewdm", cmd_previewdm))
+    # # application.add_handler(CommandHandler("testdm", cmd_testdm))
     # PATCH9_MODE_CALLBACK
     application.add_handler(CallbackQueryHandler(_handle_mode_callback, pattern="^mode_"))
     # Overhaul: new command handlers
@@ -5347,7 +5376,6 @@ def main():
     logger.info("MagicFit Outreach Bot starting...")
     
     try:
-        import dm_automation
         import inbox_watcher
         # dm_automation.start_dm_worker() # Disabled per user request (moved to manual HTML tool)
         inbox_watcher.start_inbox_watcher(application)

@@ -1347,7 +1347,18 @@ async def _fetch_profile_with_fallback(
 
 
 async def run_pipeline(seeds: list, cfg: dict, hops: int,
-                       skip_seen: bool, progress_cb) -> list:
+                       skip_seen: bool, progress_cb: Callable) -> List[CreatorProfile]:
+    """
+    Master pipeline — multi-strategy, concurrent, fault-tolerant.
+
+    Strategies per seed (run in parallel where possible):
+      1. Related/Suggested Profiles (discover/chained_profiles) — niche-matched lookalikes
+      2. Following List (friendships API) — who they follow
+      3. Apify (analyzeFollowersFollowing) — fallback/supplement
+
+    Each discovered username is then scored through the filter pipeline
+    with concurrent processing (up to CONCURRENCY profiles at once).
+    """
     global cancel_flag
     cancel_flag = False
 
@@ -1357,136 +1368,323 @@ async def run_pipeline(seeds: list, cfg: dict, hops: int,
     mode         = cfg.get("scrape_mode", "hybrid")
     _has_cookies = bool(cookie_rows)
     _has_apify   = has_apify_available()
-    max_follow   = cfg.get("max_following", 500)
-    max_total    = cfg.get("max_total", 1000)
+    max_follow   = cfg.get("max_following", MAX_FOLLOWING)
+    max_total    = cfg.get("max_total", MAX_TOTAL)
 
     if not _has_cookies and not _has_apify:
         await progress_cb("No backend ready. Add /addcookie or /addapify first.")
         return []
 
-    import asyncio
+    if mode == "cookie" and not _has_cookies: mode = "apify"
+    elif mode == "apify" and not _has_apify:  mode = "cookie"
+    elif mode == "hybrid" and not _has_cookies: mode = "apify"
+    elif mode == "hybrid" and not _has_apify:   mode = "cookie"
+
     loop = asyncio.get_event_loop()
-    results = []
+    results: List[CreatorProfile] = []
+    visited: Set[str] = set()
     stats = ScanStats()
-    semaphore = asyncio.Semaphore(10)
-    
-    # PHASE 1: Extract Followings from all seeds
-    all_discovery_usernames = set()
-    apify_profiles_cache = {}
-    
-    await progress_cb(f"🚀 Phase 1: Extracting followings from {len(seeds)} seeds...")
-    
+    semaphore = asyncio.Semaphore(CONCURRENCY)
+
+    await progress_cb(
+        f"[{mode}] {len(seeds)} seeds | max_follow={max_follow} max_results={max_total}\n"
+        f"filters: loc={cfg.get('location_filter',True)} "
+        f"reach={cfg.get('min_reach_ratio',0.8)}x eng={cfg.get('min_engagement',3.0)}%\n"
+        f"backends: {len(cookie_rows)} cookies, "
+        f"{count_active_apify()} apify tokens"
+    )
+
     for seed_idx, seed_raw in enumerate(seeds):
-        if cancel_flag: break
+        if cancel_flag or len(results) >= max_total:
+            break
+
         seed = seed_raw.strip().lstrip("@")
-        
-        # Web fetch
-        seed_data, _ = await loop.run_in_executor(None, _fetch_profile_web_public, seed)
-        seed_user_id = seed_data.get("id", "") if seed_data else ""
-        
-        following = []
-        if seed_user_id and _has_cookies and pool.healthy_count > 0:
-            session4, cookie4 = pool.next_session()
-            await pool.wait_for(cookie4)
-            following, status = await loop.run_in_executor(
-                None, _fetch_following_cookie, session4, seed_user_id, max_follow, None)
-            if following: pool.mark_success(cookie4)
-            else: pool.mark_error(cookie4)
-            
-        if not following and _has_apify:
+        await progress_cb(f"━━ Seed {seed_idx+1}/{len(seeds)}: @{seed} ━━")
+
+        # ── A. Get seed profile + user_id ────────────────────────────
+        seed_data = None
+        seed_user_id = None
+        web_status = "N/A"
+        cookie_status = "N/A"
+        apify_error = "N/A"
+
+        if _has_cookies and mode in ("cookie", "hybrid"):
+            await progress_cb(f"[█████░░░░░░░░░░░░░░░] @{seed} fetching profile (cookie)...")
+            session, cookie = pool.next_session()
+            await pool.wait_for(cookie)
+            seed_data, cookie_status = await loop.run_in_executor(
+                None, _fetch_profile_cookie, session, seed)
+            if cookie_status == 429:
+                pool.mark_rate_limited(cookie)
+                await progress_cb(f"@{seed}: cookie rate limited, trying fallbacks...")
+            elif cookie_status in (401, 403):
+                pool.deactivate(cookie)
+                await progress_cb(f"Cookie #{cookie['id']} ({cookie['label']}) expired (HTTP {cookie_status}). Deactivated.")
+            elif seed_data:
+                pool.mark_success(cookie)
+                stats.c_hits += 1
+                seed_user_id = seed_data.get("id", "")
+            else:
+                pool.mark_error(cookie)
+                await progress_cb(f"@{seed}: cookie fetch failed (HTTP {cookie_status})")
+
+        if not seed_data and not seed_user_id:
+            await progress_cb(f"[░░░░░░░░░░░░░░░░░░░░] @{seed} fetching profile (web)...")
+            # Fallback: public web scrape for seed
+            seed_data, web_status = await loop.run_in_executor(
+                None, _fetch_profile_web_public, seed)
+            if seed_data:
+                stats.web_hits += 1
+                seed_user_id = seed_data.get("id", "")
+            else:
+                await progress_cb(f"@{seed} web public fetch failed (status: {web_status})")
+
+        if not seed_user_id and _has_apify:
+            await progress_cb(f"[██████████░░░░░░░░░░] @{seed} fetching profile (apify)...")
+            # Fallback: Apify for seed profile
             tok = _next_apify_token()
             if tok:
                 try:
                     items = await loop.run_in_executor(
                         None, _apify_run_sync, tok["token"], {
                             "username": seed,
+                            "operationMode": "analyzeProfile",
+                        }, 60)
+                    if items:
+                        seed_data = _normalize_apify(items[0])
+                        _mark_apify_used(tok["id"])
+                        stats.a_hits += 1
+                        seed_user_id = seed_data.get("id", "")
+                    else:
+                        apify_error = "No items returned"
+                        await progress_cb(f"@{seed} apify fetch failed (no items returned)")
+                except Exception as e:
+                    apify_error = str(e)
+                    await progress_cb(f"@{seed} apify fetch failed: {str(e)[:100]}")
+                    _mark_apify_error(tok["id"], str(e))
+            else:
+                await progress_cb(f"@{seed} apify fetch failed: no active apify tokens")
+
+        if not seed_user_id:
+            await progress_cb(f"@{seed}: could not resolve profile. (Web={web_status}, Cookie={cookie_status}, Apify={str(apify_error)[:40]}). Skipping.")
+            continue
+
+        # ── B. Multi-strategy expansion ──────────────────────────────
+        discovery_usernames: List[str] = []
+        apify_profiles: Dict[str, dict] = {}
+
+        if hops == 0:
+            discovery_usernames = [seed]
+            if seed_data:
+                apify_profiles[seed] = seed_data
+
+        # Strategy 1: Related/Suggested Profiles (best quality)
+        if hops > 0 and _has_cookies and mode in ("cookie", "hybrid") and pool.healthy_count > 0:
+            session2, cookie2 = pool.next_session()
+            await pool.wait_for(cookie2)
+            related_raw = await loop.run_in_executor(
+                None, _fetch_related_profiles_cookie, session2, seed_user_id)
+
+            if related_raw:
+                pool.mark_success(cookie2)
+                for rp in related_raw:
+                    uname = rp.get("username", "")
+                    if uname and uname not in visited and uname not in seen_before:
+                        discovery_usernames.append(uname)
+                stats.related_found += len(related_raw)
+                await progress_cb(
+                    f"@{seed}: {len(related_raw)} related profiles (niche-matched)")
+
+                # For related profiles, if we have enough and they're the cream of the crop,
+                # also fetch their related profiles (1-hop expansion on related)
+                if len(related_raw) >= 8 and _has_cookies and pool.healthy_count > 0:
+                    # Pick top 3 related profiles for sub-expansion
+                    sub_seeds = [rp.get("username", "") for rp in related_raw[:3]
+                                 if rp.get("username")]
+                    for sub_seed in sub_seeds:
+                        if cancel_flag or len(discovery_usernames) >= MAX_RELATED:
+                            break
+                        # Get their related profiles too
+                        sub_data, sub_status = await loop.run_in_executor(
+                            None, _fetch_profile_cookie, session2, sub_seed)
+                        if sub_data and sub_data.get("id"):
+                            session3, cookie3 = pool.next_session()
+                            await pool.wait_for(cookie3)
+                            sub_related = await loop.run_in_executor(
+                                None, _fetch_related_profiles_cookie,
+                                session3, sub_data["id"])
+                            if sub_related:
+                                pool.mark_success(cookie3)
+                                for rp in sub_related:
+                                    uname = rp.get("username", "")
+                                    if (uname and uname not in visited
+                                            and uname not in seen_before
+                                            and uname not in discovery_usernames):
+                                        discovery_usernames.append(uname)
+                                stats.related_found += len(sub_related)
+            else:
+                pool.mark_error(cookie2)
+
+        # Strategy 2: Following List (breadth)
+        if hops > 0 and _has_cookies and mode in ("cookie", "hybrid") and seed_user_id and pool.healthy_count > 0:
+            session4, cookie4 = pool.next_session()
+            await pool.wait_for(cookie4)
+            
+            def following_prog(fetched, total):
+                pct = min(100, int(100 * fetched / max(1, total)))
+                bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
+                msg = f"[{bar}] @{seed} following list ({fetched}/{total})"
+                try: asyncio.run_coroutine_threadsafe(progress_cb(msg), loop)
+                except Exception: pass
+
+            following, status = await loop.run_in_executor(
+                None, _fetch_following_cookie, session4, seed_user_id, max_follow, following_prog)
+            if following:
+                pool.mark_success(cookie4)
+                stats.following_found += len(following)
+                for uname in following:
+                    if uname not in visited and uname not in seen_before:
+                        if uname not in discovery_usernames:
+                            discovery_usernames.append(uname)
+                await progress_cb(
+                    f"@{seed}: {len(following)} in following list")
+            else:
+                if status in (401, 403):
+                    pool.deactivate(cookie4)
+                    await progress_cb(f"Cookie #{cookie4['id']} ({cookie4['label']}) expired (HTTP {status}). Deactivated.")
+                elif status == 429:
+                    pool.mark_rate_limited(cookie4)
+                    await progress_cb(f"@{seed}: following fetch rate limited.")
+                else:
+                    pool.mark_error(cookie4)
+
+        # Strategy 3: Apify following expansion (fallback / supplement)
+        if hops > 0 and not discovery_usernames and _has_apify and (mode in ("apify", "hybrid") or (mode == "cookie" and pool.healthy_count == 0)):
+            tok = _next_apify_token()
+            if tok:
+                try:
+                    items = await loop.run_in_executor(
+                        None, _apify_run_sync, tok["token"], {
+                            "username":      seed,
                             "operationMode": "analyzeFollowersFollowing",
-                            "resultsType": "following",
-                            "resultsLimit": max_follow,
+                            "resultsType":   "following",
+                            "resultsLimit":  max_follow,
                         })
                     _mark_apify_used(tok["id"], 0.02)
                     for item in items:
                         uname = item.get("username", "")
-                        if uname: 
-                            following.append(uname)
-                            apify_profiles_cache[uname] = _normalize_apify(item)
+                        if uname and uname not in visited:
+                            discovery_usernames.append(uname)
+                            apify_profiles[uname] = _normalize_apify(item)
+                    stats.a_hits += 1
+                    await progress_cb(
+                        f"@{seed} (Apify): {len(discovery_usernames)} accounts")
                 except Exception as e:
-                    _mark_apify_error(tok["id"], str(e))
-                    
-        all_discovery_usernames.update(following)
-        await progress_cb(f"✅ @{seed}: Extracted {len(following)} handles. Total unique so far: {len(all_discovery_usernames)}")
+                    err = str(e)
+                    await progress_cb(f"Apify error for @{seed}: {err[:60]}")
+                    if tok: _mark_apify_error(tok["id"], err)
 
-    # PHASE 2: Deduplicate and Score
-    discovery_list = list(all_discovery_usernames)
-    await progress_cb(f"🔍 Phase 2: Deduplicated to {len(discovery_list)} unique handles. Starting scoring process...")
-    
-    visited = set()
-    batch_matched = 0
-    
-    current_token_id = _next_apify_token()["id"] if _has_apify and _next_apify_token() else None
+        if not discovery_usernames:
+            await progress_cb(f"@{seed}: no discovery data. Check backends.")
+            continue
 
-    async def _score_one(uname: str):
-        nonlocal batch_matched, current_token_id
-        if cancel_flag or len(results) >= max_total: return
-        if uname in visited or uname in seen_before: return
-        visited.add(uname)
+        await progress_cb(
+            f"@{seed}: {len(discovery_usernames)} candidates total "
+            f"(related:{stats.related_found} following:{stats.following_found})")
 
-        profile_data = apify_profiles_cache.get(uname)
-        if not profile_data:
-            profile_data, _ = await loop.run_in_executor(None, _fetch_profile_web_public, uname)
-            if profile_data: stats.web_hits += 1
-            
-            if not profile_data and _has_apify:
-                tok = _next_apify_token()
-                if tok:
-                    if tok["id"] != current_token_id:
-                        # Token swapped! Trigger export!
-                        await progress_cb(f"⚠️ Apify Token Exhausted/Rate Limited. Swapped to new token. Triggering partial export...")
-                        
-                        # Export whatever we have so far
-                        if results:
-                            exports = export(results, seeds)
-                            if exports and "csv" in exports:
-                                await progress_cb(f"EXPORT_TRIGGER:TOKEN_SWAP|{exports['csv']}")
-                                
-                        current_token_id = tok["id"]
-                        
-                    try:
-                        items = await loop.run_in_executor(
-                            None, _apify_run_sync, tok["token"], {
-                                "username": uname,
-                                "operationMode": "analyzeProfile",
-                            }, 60)
-                        if items:
-                            profile_data = _normalize_apify(items[0])
-                            _mark_apify_used(tok["id"])
-                            stats.a_hits += 1
-                    except Exception as e:
-                        _mark_apify_error(tok["id"], str(e))
-                        
-        if not profile_data: return
-        
-        prof = await filter_profile(profile_data, "bulk", 1, cfg)
-        if prof:
-            results.append(prof)
-            batch_matched += 1
-            stats.passed += 1
-            if prof.email: stats.emails_found += 1
+        # ── C. Score each discovered account (concurrent) ────────────
+        batch_matched = 0
+        batch_size = len(discovery_usernames)
 
-    for batch_start in range(0, len(discovery_list), 30):
-        if cancel_flag or len(results) >= max_total: break
-        batch = discovery_list[batch_start:batch_start+30]
-        tasks = [_score_one(uname) for uname in batch]
-        await asyncio.gather(*tasks, return_exceptions=True)
-        
-        pct = min(100, int(100 * batch_start / max(1, len(discovery_list))))
-        bar = "█" * (pct // 5) + "▒" * (20 - pct // 5)
-        await progress_cb(f"[{bar}] Scored {batch_start}/{len(discovery_list)} | Matched: {len(results)}")
+        async def _score_one(i: int, uname: str):
+            """Score a single profile — called concurrently."""
+            nonlocal batch_matched
+            if cancel_flag or len(results) >= max_total:
+                return
+            if uname in visited or uname in seen_before:
+                return
+            visited.add(uname)
+
+            # Get full profile data (with fallback chain)
+            profile_data = apify_profiles.get(uname)
+            if not profile_data:
+                profile_data = await _fetch_profile_with_fallback(
+                    uname, pool, _has_cookies, _has_apify, mode, loop,
+                    stats, semaphore)
+
+            if not profile_data:
+                return
+
+            stats.profiles_scored += 1
+
+            # Apply master filter
+            prof = await filter_profile(profile_data, seed, 1, cfg)
+            if prof:
+                results.append(prof)
+                batch_matched += 1
+                stats.passed += 1
+                stats.cohorts[prof.cohort] = stats.cohorts.get(prof.cohort, 0) + 1
+                if prof.email:
+                    stats.emails_found += 1
+            else:
+                # Track rejection reason
+                followers = profile_data.get("edge_followed_by", {}).get("count", 0)
+                fmin = cfg.get("follower_min", DEFAULT_FOLLOWER_MIN)
+                fmax = cfg.get("follower_max", DEFAULT_FOLLOWER_MAX)
+                if followers < fmin or followers > fmax:
+                    stats.rejected_followers += 1
+                elif cfg.get("location_filter", True):
+                    ls, _ = score_location(profile_data)
+                    if ls < 0:
+                        stats.rejected_location += 1
+                    else:
+                        stats.rejected_reach += 1
+                else:
+                    stats.rejected_reach += 1
+
+        # Process in concurrent batches
+        for batch_start in range(0, len(discovery_usernames), CONCURRENCY * 3):
+            if cancel_flag or len(results) >= max_total:
+                break
+
+            batch_end = min(batch_start + CONCURRENCY * 3, len(discovery_usernames))
+            batch = discovery_usernames[batch_start:batch_end]
+
+            tasks = [_score_one(batch_start + j, uname)
+                     for j, uname in enumerate(batch)]
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Progress report every batch
+            pct = min(100, int(100 * len(results) / max(1, max_total // 4)))
+            bar = "█" * (pct // 5) + "░" * (20 - pct // 5)
+            await progress_cb(
+                f"[{bar}] {batch_end}/{batch_size} scored | "
+                f"matched:{len(results)} | {pool.stats_str()}"
+            )
+
+        await progress_cb(
+            f"@{seed} done: {batch_matched} matched from "
+            f"{batch_size} candidates")
+
+    # ── 2-hop expansion ──────────────────────────────────────────────
+    if hops > 1 and results and not cancel_flag:
+        hop2_seeds = [p.username for p in results[:20]]
+        await progress_cb(f"2-hop: expanding from {len(hop2_seeds)} matched accounts...")
+        cfg2 = dict(cfg)
+        hop2_results = await run_pipeline(hop2_seeds, cfg2, 1, True, progress_cb)
+        existing = {p.username for p in results}
+        for p in hop2_results:
+            if p.username not in existing:
+                p.hop = 2
+                results.append(p)
+                existing.add(p.username)
 
     results.sort(key=lambda p: (p.niche_score, p.location_score, p.engagement_rate), reverse=True)
     mark_seen([p.username for p in results])
-    await progress_cb(f"Scan complete!\\n{stats.summary(mode)}")
+
+    await progress_cb(f"Scan complete!\n{stats.summary(mode)}")
     return results
+
 
 # =====================================================================
 #  CRM PUSH
