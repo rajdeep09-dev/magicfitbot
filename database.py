@@ -427,11 +427,18 @@ def update_alias_limit(alias, new_limit):
 def increment_alias_sent(alias):
     today = date.today().isoformat()
     conn = get_db()
-    row = conn.execute("SELECT last_reset FROM smtp_aliases WHERE alias=?", (alias,)).fetchone()
-    if row and row["last_reset"] != today:
-        conn.execute("UPDATE smtp_aliases SET daily_sent=1, last_reset=? WHERE alias=?", (today, alias))
-    else:
-        conn.execute("UPDATE smtp_aliases SET daily_sent=daily_sent+1 WHERE alias=?", (alias,))
+    row = conn.execute("SELECT last_reset, smtp_user FROM smtp_aliases WHERE alias=?", (alias,)).fetchone()
+    if row:
+        if row["last_reset"] != today:
+            conn.execute("UPDATE smtp_aliases SET daily_sent=1, last_reset=? WHERE alias=?", (today, alias))
+        else:
+            conn.execute("UPDATE smtp_aliases SET daily_sent=daily_sent+1 WHERE alias=?", (alias,))
+            
+        from datetime import datetime
+        conn.execute(
+            "UPDATE gmail_accounts SET sent_today=sent_today+1, last_used=? WHERE email=?",
+            (datetime.now().isoformat(), row["smtp_user"])
+        )
     conn.commit()
 
 def progress_alias_warmup(alias):
@@ -474,9 +481,10 @@ def get_next_available_account():
     
     # Get aliases
     alias_rows = conn.execute("""
-        SELECT alias as id, 'alias' as type, alias as from_email, smtp_user, smtp_pass, NULL as last_used, daily_sent as sent_today
-        FROM smtp_aliases
-        WHERE is_active=1 AND daily_sent < daily_limit
+        SELECT a.alias as id, 'alias' as type, a.alias as from_email, a.smtp_user, a.smtp_pass, NULL as last_used, a.daily_sent as sent_today
+        FROM smtp_aliases a
+        JOIN gmail_accounts g ON a.smtp_user = g.email
+        WHERE a.is_active=1 AND a.daily_sent < a.daily_limit AND g.sent_today < g.daily_limit
     """).fetchall()
     candidates.extend([dict(r) for r in alias_rows])
     
