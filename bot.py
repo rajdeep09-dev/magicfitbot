@@ -3378,11 +3378,31 @@ async def cmd_keywords(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f" Reward: {', '.join(c['reward_keywords'])}\n"
             f" Penalize: {', '.join(c['penalize_keywords'])}\n\n"
-            "/keywords add reward <word>\n/keywords remove penalize <word>"); return
-    if len(ctx.args) >= 3 and ctx.args[0] in ("add","remove") and ctx.args[1] in ("reward","penalize"):
-        key = ctx.args[1] + "_keywords"; word = " ".join(ctx.args[2:]).lower()
-        if ctx.args[0] == "add" and word not in c[key]: c[key].append(word)
-        elif ctx.args[0] == "remove" and word in c[key]: c[key].remove(word)
+            "Usage:\n/keywords <add|remove> <reward|penalize> <word1, word2...>\n"
+            "/keywords clear <reward|penalize>"
+        )
+        return
+        
+    action = ctx.args[0].lower()
+    if len(ctx.args) >= 2 and action in ("add", "remove", "clear", "reset"):
+        target = ctx.args[1].lower()
+        if target not in ("reward", "penalize"):
+            await update.message.reply_text("Target must be 'reward' or 'penalize'.")
+            return
+            
+        key = target + "_keywords"
+        
+        if action in ("clear", "reset"):
+            c[key] = []
+        elif len(ctx.args) >= 3:
+            words = [w.strip() for w in " ".join(ctx.args[2:]).lower().split(",")]
+            if action == "add":
+                for w in words:
+                    if w and w not in c[key]: c[key].append(w)
+            elif action == "remove":
+                for w in words:
+                    if w in c[key]: c[key].remove(w)
+                    
         discovery.save_cfg(c)
         await update.message.reply_text(f" {key}: {', '.join(c[key])}")
 
