@@ -16,14 +16,18 @@ logger = logging.getLogger("email_automation")
 
 def generate_personalized_email(creator_data: dict) -> tuple:
     """Uses full AI chain to generate a personalized email subject and body for a creator."""
-    system_prompt = (
+    default_prompt = (
         "You are a friendly partnership manager reaching out to Instagram creators on behalf of MagicFit. "
-        "Keep the message professional but casual and concise. "
-        "The goal is a quick opener asking if they are open to a paid collab (upfront fee + commission). "
-        "Make it highly personalized to their niche or bio. "
+        "Keep the message professional but highly personalized to their niche or bio. "
+        "The goal is asking if they are open to a paid collab (upfront fee + commission). "
         "Return the response in JSON format with two keys: 'subject' and 'body'. "
         "Do not include placeholders like [Your Name]. Just write the message ready to send."
     )
+    user_system = db.get_setting("email_generator_prompt", default_prompt)
+    if not user_system:
+        user_system = default_prompt
+        
+    system_prompt = user_system
     user_prompt = f"Profile Data: {json.dumps(creator_data, ensure_ascii=False)}"
 
     result, fail_reason = ai_router._try_chain(system_prompt, user_prompt, expect_json=True)

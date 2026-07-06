@@ -569,11 +569,7 @@ async def cmd_setprompt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(text_parts) < 2:
         current = db.get_setting("system_prompt")
         await update.message.reply_text(
-            f"<b>Current system prompt:</b>
-
-<pre>{_escape_html(str(current)[:3000])}</pre>
-
-"
+            f"<b>Current system prompt:</b>\n\n<pre>{_escape_html(str(current)[:3000])}</pre>\n\n"
             f"To change it, reply with /setprompt followed by your new prompt.",
             parse_mode=ParseMode.HTML,
         )
@@ -2992,11 +2988,7 @@ async def cmd_setemailprompt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(text_parts) < 2:
         current = db.get_setting("email_generator_prompt", "DEFAULT PROMPT")
         await update.message.reply_text(
-            f"<b>Current Email AI Prompt:</b>
-
-<pre>{_escape_html(str(current)[:3000])}</pre>
-
-"
+            f"<b>Current Email AI Prompt:</b>\n\n<pre>{_escape_html(str(current)[:3000])}</pre>\n\n"
             f"To change it, use: /setemailprompt <new prompt>", parse_mode=ParseMode.HTML
         )
         return
@@ -3009,11 +3001,7 @@ async def cmd_setemailtemplate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(text_parts) < 2:
         current = db.get_setting("email_template", "DEFAULT TEMPLATE")
         await update.message.reply_text(
-            f"<b>Current Base Email Template:</b>
-
-<pre>{_escape_html(str(current)[:3000])}</pre>
-
-"
+            f"<b>Current Base Email Template:</b>\n\n<pre>{_escape_html(str(current)[:3000])}</pre>\n\n"
             f"To change it, use: /setemailtemplate <new template>", parse_mode=ParseMode.HTML
         )
         return
@@ -3032,15 +3020,12 @@ async def cmd_queue(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 Email queue is empty.")
         return
         
-    lines = ["<b>Queued Emails:</b>
-"]
+    lines = ["<b>Queued Emails:</b>\n"]
     for r in rows:
         lines.append(f"#{r['id']} - {r['subject']}")
-    lines.append("
-Use /editemail <id> <new_body> to edit.")
+    lines.append("\nUse /editemail <id> <new_body> to edit.")
     lines.append("Use /deleteemail <id> to drop an email.")
-    await update.message.reply_text("
-".join(lines), parse_mode=ParseMode.HTML)
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 async def cmd_editemail(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not authorized(update.effective_user.id): return
@@ -4161,13 +4146,9 @@ async def cmd_uploaddms(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         conn.close()
         
         await update.message.reply_text(
-            f"✅ <b>Tinder Selections Applied!</b>
-
-"
-            f"👍 Marked Passed: {good_count}
-"
-            f"🌱 Added to Seeds: {seed_count}
-"
+            f"✅ <b>Tinder Selections Applied!</b>\n\n"
+            f"👍 Marked Passed: {good_count}\n"
+            f"🌱 Added to Seeds: {seed_count}\n"
             f"📨 Queued for Email: {outreach_count}",
             parse_mode="HTML"
         )
@@ -5014,16 +4995,13 @@ async def cmd_apifytokens(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         processing_msg = await update.message.reply_text("<i>Fetching live Apify usage...</i>", parse_mode="HTML")
             
         import httpx
-        text = "<b>Apify Tokens Loaded:</b>
-
-"
+        text = "<b>Apify Tokens Loaded:</b>\n\n"
         
         async with httpx.AsyncClient(timeout=10) as client:
             for i, token in enumerate(tokens):
                 t_val = token.get('token', token.get('key', ''))
                 if not t_val:
-                    text += f"{i+1}. ⚠️ Invalid token entry
-"
+                    text += f"{i+1}. ⚠️ Invalid token entry\n"
                     continue
                     
                 masked = _mask_key(t_val)
@@ -5034,26 +5012,18 @@ async def cmd_apifytokens(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         data = r.json().get('data', {})
                         max_usd = data.get('limits', {}).get('maxMonthlyUsageUsd', 0)
                         curr_usd = data.get('current', {}).get('monthlyUsageUsd', 0)
-                        text += f"<b>{i+1}. {masked}</b>
-"
-                        text += f"   💳 Usage: ${curr_usd:.2f} / ${max_usd:.2f}
-"
+                        text += f"<b>{i+1}. {masked}</b>\n"
+                        text += f"   💳 Usage: ${curr_usd:.2f} / ${max_usd:.2f}\n"
                     else:
-                        text += f"<b>{i+1}. {masked}</b>
-   ⚠️ Failed to fetch usage ({r.status_code})
-"
+                        text += f"<b>{i+1}. {masked}</b>\n   ⚠️ Failed to fetch usage ({r.status_code})\n"
                 except Exception as ex:
-                    text += f"<b>{i+1}. {masked}</b>
-   ⚠️ Error fetching usage: {ex}
-"
+                    text += f"<b>{i+1}. {masked}</b>\n   ⚠️ Error fetching usage: {ex}\n"
                 
-                text += "
-"
+                text += "\n"
                 
         await processing_msg.edit_text(text, parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"Error reading Apify tokens: {e}")
-
 
 async def cmd_seeds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """List all active seed accounts."""

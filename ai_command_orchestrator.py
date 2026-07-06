@@ -139,9 +139,19 @@ SYSTEM_PROMPT = """You are the AI brain of "Creator Reacher", a Telegram bot tha
 --- SETTINGS ---
 /settings - View all current bot settings
 /setprompt - Edit the AI system prompt used for generating outreach emails
+/setemailprompt - Set the AI generator prompt for email drafting
+/setemailtemplate - Set the base email template for outreach
 /setinterval <min> <max> - Set send interval in seconds (e.g. /setinterval 120 420)
 /setfollowup <days> <max> - Set follow-up timing (e.g. /setfollowup 3 2)
 /setdminterval <min> <max> - Set DM intervals
+
+--- FILE MANAGEMENT ---
+/files - Access exported files
+/removefile <filename> - Delete an exported file
+
+--- EMAIL QUEUE EXTENSIONS ---
+/editemail <id> <new_text> - Edit a queued email body
+/deleteemail <id> - Delete an email from the queue
 
 --- REPORTS & ANALYTICS ---
 /report - Today's outreach campaign stats
