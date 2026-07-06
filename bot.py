@@ -3452,15 +3452,6 @@ async def cmd_addapify(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tid = discovery.add_apify_token(ctx.args[0], label)
     await update.message.reply_text(f" Token #{tid} added. Total: {len(discovery.list_apify_tokens())}")
 
-async def cmd_apifytokens(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    if not authorized(update.effective_user.id) or not discovery: return
-    tokens = discovery.list_apify_tokens()
-    if not tokens: await update.message.reply_text("No Apify tokens. /addapify <token>"); return
-    lines = []
-    for t in tokens:
-        s = "" if t["active"] else ""
-        u = f"${t['credits_used']:.3f}" if t["credits_used"] else "$0"
-        lines.append(f"{s} #{t['id']} {t['label']} {u}")
     c = discovery.get_cfg()
     await update.message.reply_text(
         f"Mode: {c['scrape_mode']} | Cookies: {len(discovery.list_cookies())}\n\n"+"\n".join(lines)+"\n\n/removeapify <id>")
@@ -5020,12 +5011,49 @@ async def cmd_apifytokens(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("No Apify tokens found. Add them using /addapify.")
             return
             
-        text = "<b>Apify Tokens Loaded:</b>\n\n"
-        for i, token in enumerate(tokens):
-            text += f"{i+1}. {_mask_key(token['token'])}\n"
-        await update.message.reply_text(text, parse_mode="HTML")
+        processing_msg = await update.message.reply_text("<i>Fetching live Apify usage...</i>", parse_mode="HTML")
+            
+        import httpx
+        text = "<b>Apify Tokens Loaded:</b>
+
+"
+        
+        async with httpx.AsyncClient(timeout=10) as client:
+            for i, token in enumerate(tokens):
+                t_val = token.get('token', token.get('key', ''))
+                if not t_val:
+                    text += f"{i+1}. ⚠️ Invalid token entry
+"
+                    continue
+                    
+                masked = _mask_key(t_val)
+                # Fetch limits
+                try:
+                    r = await client.get(f'https://api.apify.com/v2/users/me/limits?token={t_val}')
+                    if r.status_code == 200:
+                        data = r.json().get('data', {})
+                        max_usd = data.get('limits', {}).get('maxMonthlyUsageUsd', 0)
+                        curr_usd = data.get('current', {}).get('monthlyUsageUsd', 0)
+                        text += f"<b>{i+1}. {masked}</b>
+"
+                        text += f"   💳 Usage: ${curr_usd:.2f} / ${max_usd:.2f}
+"
+                    else:
+                        text += f"<b>{i+1}. {masked}</b>
+   ⚠️ Failed to fetch usage ({r.status_code})
+"
+                except Exception as ex:
+                    text += f"<b>{i+1}. {masked}</b>
+   ⚠️ Error fetching usage: {ex}
+"
+                
+                text += "
+"
+                
+        await processing_msg.edit_text(text, parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"Error reading Apify tokens: {e}")
+
 
 async def cmd_seeds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """List all active seed accounts."""
