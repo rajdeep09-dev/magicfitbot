@@ -4999,7 +4999,7 @@ async def cmd_apifytokens(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         
         async with httpx.AsyncClient(timeout=10) as client:
             for i, token in enumerate(tokens):
-                t_val = token.get('token', token.get('key', ''))
+                t_val = dict(token).get('token', dict(token).get('key', ''))
                 if not t_val:
                     text += f"{i+1}. ⚠️ Invalid token entry\n"
                     continue
