@@ -471,7 +471,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "/scrapemode [mode] - View or set scrape mode (cookie | apify | hybrid)\n"
             "/setfilters min max - Set follower range filter (e.g. /setfilters 10000 500000)\n"
             "/setreach X.X - Set reach ratio filter (e.g. /setreach 0.8)\n"
-            "/keywords [add|remove] [reward|penalize] [word] - Configure keyword priority list\n\n"
+            "/keywords <add|remove|clear> <reward|penalize> [word1, word2] - Configure keyword priority list\n\n"
             "<b>🍪 Cookies & APIs</b>\n"
             "/addcookie sessionid csrftoken [label] - Add Instagram session cookies\n"
             "/cookies - List Instagram session cookies\n"
