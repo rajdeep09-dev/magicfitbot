@@ -565,22 +565,23 @@ async def cmd_setprompt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not authorized(update.effective_user.id):
         return
 
-    if not ctx.args:
+    text_parts = update.message.text.split(maxsplit=1)
+    if len(text_parts) < 2:
         current = db.get_setting("system_prompt")
         await update.message.reply_text(
-            f"<b>Current system prompt:</b>\n\n<pre>{_escape_html(current[:3000])}</pre>\n\n"
+            f"<b>Current system prompt:</b>
+
+<pre>{_escape_html(str(current)[:3000])}</pre>
+
+"
             f"To change it, reply with /setprompt followed by your new prompt.",
             parse_mode=ParseMode.HTML,
         )
         return
-
-    new_prompt = update.message.text.split(maxsplit=1)[1] if len(update.message.text.split(maxsplit=1)) > 1 else ""
-    if not new_prompt:
-        await update.message.reply_text("Provide a new prompt after /setprompt.")
-        return
-
+        
+    new_prompt = text_parts[1].strip()
     db.set_setting("system_prompt", new_prompt)
-    await update.message.reply_text(" System prompt updated.")
+    await update.message.reply_text("✅ System prompt updated successfully.")
 
 
 async def cmd_setinterval(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -1046,7 +1047,7 @@ async def cmd_dmlist(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = "<b> Pending DMs</b>\n\n"
     for r in rems[:30]:
         text += f"#{r['id']} — {r['name']} (@{r['handle']}) on {r['platform']}\n"
-    text += "\nMark done: /dmdone <id>"
+    text += "\nMark done: /dmdone &lt;id&gt;"
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
@@ -2983,6 +2984,98 @@ async def error_handler(update, ctx):
 #                       MAIN
 # 
 
+
+
+async def cmd_setemailprompt(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update.effective_user.id): return
+    text_parts = update.message.text.split(maxsplit=1)
+    if len(text_parts) < 2:
+        current = db.get_setting("email_generator_prompt", "DEFAULT PROMPT")
+        await update.message.reply_text(
+            f"<b>Current Email AI Prompt:</b>
+
+<pre>{_escape_html(str(current)[:3000])}</pre>
+
+"
+            f"To change it, use: /setemailprompt <new prompt>", parse_mode=ParseMode.HTML
+        )
+        return
+    db.set_setting("email_generator_prompt", text_parts[1].strip())
+    await update.message.reply_text("✅ Email AI Prompt updated.")
+
+async def cmd_setemailtemplate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update.effective_user.id): return
+    text_parts = update.message.text.split(maxsplit=1)
+    if len(text_parts) < 2:
+        current = db.get_setting("email_template", "DEFAULT TEMPLATE")
+        await update.message.reply_text(
+            f"<b>Current Base Email Template:</b>
+
+<pre>{_escape_html(str(current)[:3000])}</pre>
+
+"
+            f"To change it, use: /setemailtemplate <new template>", parse_mode=ParseMode.HTML
+        )
+        return
+    db.set_setting("email_template", text_parts[1].strip())
+    await update.message.reply_text("✅ Base Email Template updated.")
+
+async def cmd_queue(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update.effective_user.id): return
+    conn = db.get_db()
+    c = conn.cursor()
+    c.execute("SELECT id, creator_id, subject FROM emails_sent WHERE status='queued' ORDER BY id ASC LIMIT 20")
+    rows = c.fetchall()
+    conn.close()
+    
+    if not rows:
+        await update.message.reply_text("📭 Email queue is empty.")
+        return
+        
+    lines = ["<b>Queued Emails:</b>
+"]
+    for r in rows:
+        lines.append(f"#{r['id']} - {r['subject']}")
+    lines.append("
+Use /editemail <id> <new_body> to edit.")
+    lines.append("Use /deleteemail <id> to drop an email.")
+    await update.message.reply_text("
+".join(lines), parse_mode=ParseMode.HTML)
+
+async def cmd_editemail(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update.effective_user.id): return
+    text_parts = update.message.text.split(maxsplit=2)
+    if len(text_parts) < 3:
+        await update.message.reply_text("Usage: /editemail <id> <new body>")
+        return
+        
+    email_id = text_parts[1]
+    new_body = text_parts[2]
+    conn = db.get_db()
+    conn.execute("UPDATE emails_sent SET body=? WHERE id=?", (new_body, email_id))
+    if conn.total_changes > 0:
+        await update.message.reply_text(f"✅ Email #{email_id} updated.")
+    else:
+        await update.message.reply_text(f"❌ Email #{email_id} not found.")
+    conn.commit()
+    conn.close()
+
+async def cmd_deleteemail(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    if not authorized(update.effective_user.id): return
+    if not ctx.args:
+        await update.message.reply_text("Usage: /deleteemail <id>")
+        return
+    email_id = ctx.args[0]
+    conn = db.get_db()
+    conn.execute("DELETE FROM emails_sent WHERE id=?", (email_id,))
+    if conn.total_changes > 0:
+        await update.message.reply_text(f"✅ Email #{email_id} deleted.")
+    else:
+        await update.message.reply_text(f"❌ Email #{email_id} not found.")
+    conn.commit()
+    conn.close()
+
+
 async def post_init(app):
     """After bot starts, capture references for background notifications."""
     global _app, _main_loop
@@ -3375,18 +3468,27 @@ async def cmd_pushtocrm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     from discovery import CreatorProfile
     profiles = []
     with open(cp,"r",encoding="utf-8") as f:
-        for row in cm.DictReader(f):
+        reader = cm.DictReader(f)
+        # normalize field names to lower case without spaces
+        reader.fieldnames = [str(name).strip().lower() for name in reader.fieldnames]
+        for row in reader:
+            def _get(keys, default=""):
+                for k in keys:
+                    if k in row and row[k]: return row[k].strip()
+                return default
+            email_val = _get(["email", "public_email", "businessemail", "business_email"])
             profiles.append(CreatorProfile(
-                username=row.get("username",""),full_name=row.get("full_name",""),
+                username=_get(["username", "instagram_username", "handle"]),
+                full_name=_get(["full_name", "name", "first_name"]),
                 followers=int(row.get("followers",0)) if row.get("followers") else 0,
                 following=int(row.get("following",0)) if row.get("following") else 0,
-                bio=row.get("bio",""),email=row.get("email",""),
-                category=row.get("category",""),is_verified=row.get("is_verified","")=="True",
-                is_business=row.get("is_business","")=="True",
+                bio=row.get("bio",""), email=email_val,
+                category=row.get("category",""), is_verified=str(row.get("is_verified","")).lower()=="true",
+                is_business=str(row.get("is_business","")).lower()=="true",
                 post_count=int(row.get("post_count",0)) if row.get("post_count") else 0,
                 engagement_rate=float(row.get("engagement_rate",0)) if row.get("engagement_rate") else 0.0,
                 reach_ratio=float(row.get("reach_ratio",-1)) if row.get("reach_ratio") else -1.0,
-                external_url=row.get("external_url",""),profile_url=row.get("profile_url",""),
+                external_url=row.get("external_url",""), profile_url=row.get("profile_url",""),
                 bio_score=int(row.get("bio_score",0)) if row.get("bio_score") else 0,
                 cohort=row.get("cohort","C"),
                 hop=int(row.get("hop",1)) if row.get("hop") else 1,
@@ -3942,44 +4044,104 @@ async def cmd_exportdms(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_uploaddms(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Handle when user uploads the dm_progress.json file."""
+    """Handle when user uploads the dm_progress.json or selections.json file."""
     if not authorized(update.effective_user.id): return
     if not update.message.document or not update.message.document.file_name.endswith('.json'):
-        await update.message.reply_text("Please upload the dm_progress.json file.")
+        await update.message.reply_text("Please upload a .json file.")
         return
         
-    await update.message.reply_text("Processing uploaded progress file...")
+    await update.message.reply_text("Processing uploaded JSON file...")
     import json
     import os
     
     file = await update.message.document.get_file()
-    path = os.path.join("discovery_exports", "uploaded_progress.json")
+    path = os.path.join("discovery_exports", "uploaded_file.json")
     await file.download_to_drive(path)
     
     with open(path, "r", encoding="utf-8") as f:
         try:
-            sent_handles = json.load(f)
+            data = json.load(f)
         except:
             await update.message.reply_text("Invalid JSON file.")
             return
             
-    if not sent_handles:
-        await update.message.reply_text("No sent DMs in this file.")
+    if not data:
+        await update.message.reply_text("The file is empty.")
         return
         
     conn = db.get_db()
     c = conn.cursor()
-    count = 0
-    for handle in sent_handles:
-        clean_handle = handle.replace("@", "")
-        # Update stage to Outreach (DMed)
-        c.execute("UPDATE creators SET stage='Outreach' WHERE handle=?", (clean_handle,))
-        if c.rowcount > 0:
-            count += 1
-    conn.commit()
-    conn.close()
     
-    await update.message.reply_text(f"✅ Successfully marked {count} creators as DMed in the database!")
+    if isinstance(data, list):
+        # Legacy DM progress file
+        count = 0
+        for handle in data:
+            clean_handle = handle.replace("@", "")
+            c.execute("UPDATE creators SET stage='contacted' WHERE handle=?", (clean_handle,))
+            if c.rowcount > 0:
+                count += 1
+        conn.commit()
+        conn.close()
+        await update.message.reply_text(f"✅ Successfully marked {count} creators as DMed (legacy).")
+        return
+        
+    elif isinstance(data, dict):
+        # Tinder Export selections.json
+        # Format: { "123": {"good": true, "seed": false, "outreach": true} }
+        good_count = 0
+        seed_count = 0
+        outreach_count = 0
+        
+        for cid_str, flags in data.items():
+            if not isinstance(flags, dict):
+                continue
+            
+            try:
+                cid = int(cid_str)
+            except:
+                continue
+                
+            # Get the handle for this creator
+            c.execute("SELECT handle FROM creators WHERE id=?", (cid,))
+            row = c.fetchone()
+            if not row:
+                continue
+            handle = row["handle"]
+            
+            if flags.get("good", False):
+                c.execute("UPDATE creators SET stage='Passed' WHERE id=?", (cid,))
+                if c.rowcount > 0:
+                    good_count += 1
+                    
+            if flags.get("seed", False):
+                added = db.add_seed(handle, source="tinder_export")
+                if added:
+                    seed_count += 1
+                    
+            if flags.get("outreach", False):
+                # We want to queue this creator for email outreach
+                c.execute("UPDATE creators SET stage='Outreach Queued' WHERE id=?", (cid,))
+                if c.rowcount > 0:
+                    outreach_count += 1
+                    
+        conn.commit()
+        conn.close()
+        
+        await update.message.reply_text(
+            f"✅ <b>Tinder Selections Applied!</b>
+
+"
+            f"👍 Marked Passed: {good_count}
+"
+            f"🌱 Added to Seeds: {seed_count}
+"
+            f"📨 Queued for Email: {outreach_count}",
+            parse_mode="HTML"
+        )
+    else:
+        conn.close()
+        await update.message.reply_text("Unrecognized JSON format.")
+
 
 async def cmd_seen(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not authorized(update.effective_user.id) or not discovery: return
@@ -4829,7 +4991,7 @@ async def cmd_seeds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     
     seeds = db.get_active_seeds()
     if not seeds:
-        await update.message.reply_text(
+        await update.effective_message.reply_text(
             "🌱 <b>No seeds saved yet.</b>\n\n"
             "Add seeds with: <code>/addseed @user1 @user2</code>",
             parse_mode="HTML"
@@ -4846,7 +5008,7 @@ async def cmd_seeds(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     lines.append(f"\n<i>Total: {len(seeds)} seeds</i>")
     
-    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+    await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
 async def cmd_addseed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -5270,6 +5432,12 @@ def main():
     application.add_handler(CommandHandler("cancel", cmd_cancel))
     application.add_handler(CommandHandler("settings", cmd_settings))
     application.add_handler(CommandHandler("setprompt", cmd_setprompt))
+    application.add_handler(CommandHandler("setemailprompt", cmd_setemailprompt))
+    application.add_handler(CommandHandler("setemailtemplate", cmd_setemailtemplate))
+    application.add_handler(CommandHandler("queue", cmd_queue))
+    application.add_handler(CommandHandler("editemail", cmd_editemail))
+    application.add_handler(CommandHandler("deleteemail", cmd_deleteemail))
+
     application.add_handler(CommandHandler("setinterval", cmd_setinterval))
     application.add_handler(CommandHandler("setfollowup", cmd_setfollowup))
     application.add_handler(CommandHandler("setreplycheck", cmd_setreplycheck))

@@ -272,7 +272,7 @@ def _try_chain(system_prompt: str, user_prompt: str, expect_json: bool = False):
         max_attempts = 2  # original try + 1 retry, only for transient network errors
         for attempt in range(1, max_attempts + 1):
             try:
-                result = _call_provider(provider, system_prompt, user_prompt)
+                result = _call_provider(provider, system_prompt, user_prompt, expect_json)
                 if not result:
                     logger.warning(f"{provider}: returned empty response")
                     failure_reasons.append(f"{provider}: empty response")
@@ -340,30 +340,30 @@ def _has_required_fields(parsed: dict) -> bool:
     return bool(subject and body and len(body) > 10)
 
 
-def _call_provider(provider: str, system_prompt: str, user_prompt: str) -> str | None:
+def _call_provider(provider: str, system_prompt: str, user_prompt: str, expect_json: bool = False) -> str | None:
     if provider == "openrouter":
         key = _get_key("openrouter_api_key", OPENROUTER_API_KEY)
         if key:
-            return _call_openrouter(system_prompt, user_prompt, key)
+            return _call_openrouter(system_prompt, user_prompt, key.strip(), expect_json)
     elif provider == "gemini":
         key = _get_key("gemini_api_key", GEMINI_API_KEY)
         if key:
-            return _call_gemini(system_prompt, user_prompt, key)
+            return _call_gemini(system_prompt, user_prompt, key.strip(), expect_json)
     elif provider == "mistral":
         key = _get_key("mistral_api_key", MISTRAL_API_KEY)
         if key:
-            return _call_mistral(system_prompt, user_prompt, key)
+            return _call_mistral(system_prompt, user_prompt, key.strip(), expect_json)
     elif provider == "groq":
         key = _get_key("groq_api_key", GROQ_API_KEY)
         if key:
-            return _call_groq(system_prompt, user_prompt, key)
+            return _call_groq(system_prompt, user_prompt, key.strip(), expect_json)
     elif provider == "nvidia":
         key = _get_key("nvidia_api_key", NVIDIA_API_KEY)
         if key:
-            return _call_nvidia(system_prompt, user_prompt, key)
+            return _call_nvidia(system_prompt, user_prompt, key.strip(), expect_json)
     return None
 
-def _call_openrouter(system_prompt: str, user_prompt: str, api_key: str) -> str | None:
+def _call_openrouter(system_prompt: str, user_prompt: str, api_key: str, expect_json: bool = False) -> str | None:
     """OpenRouter via OpenAI-compatible endpoint."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -381,12 +381,14 @@ def _call_openrouter(system_prompt: str, user_prompt: str, api_key: str) -> str 
         ],
         "temperature": 0.85,
     }
+    if expect_json:
+        payload["response_format"] = {"type": "json_object"}
     r = requests.post(url, headers=headers, json=payload, timeout=30)
     r.raise_for_status()
     data = r.json()
     return data["choices"][0]["message"]["content"]
 
-def _call_gemini(system_prompt: str, user_prompt: str, api_key: str) -> str | None:
+def _call_gemini(system_prompt: str, user_prompt: str, api_key: str, expect_json: bool = False) -> str | None:
     """Gemini 2.5 Flash via Google AI Studio."""
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
     payload = {
@@ -403,7 +405,7 @@ def _call_gemini(system_prompt: str, user_prompt: str, api_key: str) -> str | No
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
-def _call_mistral(system_prompt: str, user_prompt: str, api_key: str) -> str | None:
+def _call_mistral(system_prompt: str, user_prompt: str, api_key: str, expect_json: bool = False) -> str | None:
     """Mistral Large via La Plateforme. Free Experiment tier, no card."""
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -416,13 +418,15 @@ def _call_mistral(system_prompt: str, user_prompt: str, api_key: str) -> str | N
         "temperature": 0.85,
         "max_tokens": 2048,
     }
+    if expect_json:
+        payload["response_format"] = {"type": "json_object"}
     r = requests.post(url, headers=headers, json=payload, timeout=30)
     r.raise_for_status()
     data = r.json()
     return data["choices"][0]["message"]["content"]
 
 
-def _call_groq(system_prompt: str, user_prompt: str, api_key: str) -> str | None:
+def _call_groq(system_prompt: str, user_prompt: str, api_key: str, expect_json: bool = False) -> str | None:
     """Groq with Llama 3.3 70B."""
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
@@ -435,13 +439,15 @@ def _call_groq(system_prompt: str, user_prompt: str, api_key: str) -> str | None
         "temperature": 0.85,
         "max_tokens": 2048,
     }
+    if expect_json:
+        payload["response_format"] = {"type": "json_object"}
     r = requests.post(url, headers=headers, json=payload, timeout=30)
     r.raise_for_status()
     data = r.json()
     return data["choices"][0]["message"]["content"]
 
 
-def _call_nvidia(system_prompt: str, user_prompt: str, api_key: str) -> str | None:
+def _call_nvidia(system_prompt: str, user_prompt: str, api_key: str, expect_json: bool = False) -> str | None:
     """NVIDIA NIM with Kimi K2.6 (Moonshot AI)."""
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
